@@ -36,6 +36,7 @@ export default function ValidationReviewPage() {
   const [actioned, setActioned] = useState<Set<string>>(new Set());
   const [validatingRule, setValidatingRule] = useState<string | null>(null);
   const [validatorInput, setValidatorInput] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [dept, setDept] = useState("All");
   const [loading, setLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
@@ -101,6 +102,13 @@ export default function ValidationReviewPage() {
 
   function handleSkip(ruleId: string) {
     setSkipped((prev) => new Set(prev).add(ruleId));
+  }
+
+  async function handleDelete(ruleId: string) {
+    await fetch(`/api/rules/${ruleId}`, { method: "DELETE" });
+    setConfirmingDelete(null);
+    setRules((prev) => prev.filter((r) => r.id !== ruleId));
+    setTotalCount((prev) => prev - 1);
   }
 
   return (
@@ -327,6 +335,30 @@ export default function ValidationReviewPage() {
                                 ✕
                               </button>
                             </>
+                          ) : confirmingDelete === rule.id ? (
+                            <>
+                              <span style={{ fontSize: 12, color: "var(--muted)", marginRight: 4 }}>Are you sure?</span>
+                              <button
+                                onClick={() => handleDelete(rule.id)}
+                                style={{
+                                  fontSize: 12, padding: "4px 12px", borderRadius: 6,
+                                  border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c",
+                                  cursor: "pointer", fontWeight: 500,
+                                }}
+                              >
+                                Yes, delete
+                              </button>
+                              <button
+                                onClick={() => setConfirmingDelete(null)}
+                                style={{
+                                  fontSize: 12, padding: "4px 8px", borderRadius: 6,
+                                  border: "1px solid var(--card-border)", background: "none", color: "var(--muted)",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </>
                           ) : (
                             <>
                               <button
@@ -358,6 +390,16 @@ export default function ValidationReviewPage() {
                                 }}
                               >
                                 Skip
+                              </button>
+                              <button
+                                onClick={() => setConfirmingDelete(rule.id)}
+                                style={{
+                                  fontSize: 12, padding: "4px 12px", borderRadius: 6,
+                                  border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Delete
                               </button>
                             </>
                           )}

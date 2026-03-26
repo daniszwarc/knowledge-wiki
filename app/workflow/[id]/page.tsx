@@ -252,25 +252,6 @@ export default function WorkflowPage() {
           </span>
         </div>
 
-        {/* Search shortcut */}
-        <div style={{ padding: "10px 10px 8px", borderBottom: "1px solid var(--sidebar-border)" }}>
-          <button
-            onClick={() => router.push("/")}
-            style={{
-              width: "100%", display: "flex", alignItems: "center", gap: 8,
-              padding: "7px 10px", borderRadius: 7,
-              border: "1px solid var(--card-border)", background: "var(--card-bg)",
-              cursor: "pointer", fontSize: 12, color: "var(--muted)",
-            }}
-          >
-            <SearchIcon />
-            <span>Search processes</span>
-            <kbd style={{ marginLeft: "auto", fontSize: 10, background: "var(--card-hover-bg)", border: "1px solid var(--card-border)", padding: "1px 5px", borderRadius: 4, fontFamily: "var(--font-geist-mono)" }}>
-              ⌘K
-            </kbd>
-          </button>
-        </div>
-
         {/* Department nav */}
         <nav style={{ flex: 1, paddingTop: 6 }}>
           {depts.map((dept) => (
@@ -284,7 +265,7 @@ export default function WorkflowPage() {
                   letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--muted)",
                 }}
               >
-                <span style={{ fontSize: 14, opacity: 0.6 }}>{DEPT_ICONS[dept] ?? "◈"}</span>
+                <span style={{ fontSize: 14, opacity: 0.6, width: 14, textAlign: "center", flexShrink: 0 }}>{DEPT_ICONS[dept] ?? "◈"}</span>
                 <span>{dept}</span>
                 <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 400, color: "var(--muted-light)" }}>
                   {grouped[dept]?.length ?? 0}
@@ -293,7 +274,7 @@ export default function WorkflowPage() {
               </button>
 
               {openDepts[dept] && (
-                <div style={{ marginLeft: 14, paddingLeft: 10, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
+                <div style={{ marginLeft: 36, paddingLeft: 8, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
                   {grouped[dept]?.map((w) => {
                     const active = w.id === id;
                     return (
@@ -653,15 +634,6 @@ export default function WorkflowPage() {
       </div>
 
     </div>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg width={13} height={13} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" style={{ display: "block" }}>
-      <circle cx={11} cy={11} r={8} />
-      <path d="m21 21-4.35-4.35" />
-    </svg>
   );
 }
 

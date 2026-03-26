@@ -250,39 +250,6 @@ export default function HomePage() {
           </span>
         </div>
 
-        {/* Search */}
-        <div style={{ padding: "12px 12px 10px", borderBottom: "1px solid var(--sidebar-border)" }}>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const val = (e.currentTarget.elements.namedItem("sidebar-q") as HTMLInputElement).value.trim();
-              if (val) router.push(`/search?q=${encodeURIComponent(val)}`);
-            }}
-            style={{ position: "relative" }}
-          >
-            <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted-light)", pointerEvents: "none", display: "flex" }}>
-              <SearchIcon />
-            </span>
-            <input
-              name="sidebar-q"
-              className="search-input"
-              placeholder="Search processes"
-              style={{
-                width: "100%",
-                paddingLeft: 30,
-                paddingRight: 36,
-                paddingTop: 7,
-                paddingBottom: 7,
-                borderRadius: 8,
-                fontSize: 13,
-              }}
-            />
-            <kbd style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 10, background: "var(--card-hover-bg)", border: "1px solid var(--card-border)", padding: "2px 5px", borderRadius: 4, fontFamily: "var(--font-geist-mono)", color: "var(--muted-light)", pointerEvents: "none" }}>
-              ⌘K
-            </kbd>
-          </form>
-        </div>
-
         {/* Department nav */}
         <nav style={{ flex: 1, paddingTop: 8 }}>
           {departments.map((dept) => (
@@ -305,7 +272,7 @@ export default function HomePage() {
                   color: "var(--muted)",
                 }}
               >
-                <span style={{ fontSize: 15, opacity: 0.7 }}>{DEPT_ICONS[dept] ?? "◈"}</span>
+                <span style={{ fontSize: 13, opacity: 0.7, width: 16, textAlign: "center", flexShrink: 0 }}>{DEPT_ICONS[dept] ?? "◈"}</span>
                 <span>{dept}</span>
                 <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 400, color: "var(--muted-light)" }}>
                   {grouped[dept]?.length ?? 0}
@@ -314,7 +281,7 @@ export default function HomePage() {
               </button>
 
               {openDepts[dept] && (
-                <div style={{ marginLeft: 16, paddingLeft: 12, borderLeft: "1px solid var(--card-border)", marginBottom: 4 }}>
+                <div style={{ marginLeft: 40, paddingLeft: 8, borderLeft: "1px solid var(--card-border)", marginBottom: 4 }}>
                   {grouped[dept]?.map((w) => (
                     <button
                       key={w.id}

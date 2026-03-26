@@ -49,13 +49,6 @@ const WORKFLOW_PROMPT_TEMPLATE =
   "Never select just one when multiple apply.\n" +
   "6. Never invent examples, dates, or scenarios not present in the rule text.";
 
-const DISCOVERY_PROMPT =
-  "You are a process discovery assistant. Based on the user's question, " +
-  "identify which documented workflows are most relevant and explain " +
-  "what they cover. Only reference workflows and rules that exist in " +
-  "the knowledge base. Do not invent names, contacts, titles, or " +
-  "processes. If you cannot find a relevant documented process, say: " +
-  "We do not have a documented process for that yet.";
 
 export async function POST(req: NextRequest) {
   try {
@@ -79,71 +72,42 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    let systemPrompt: string;
-
-    if (workflowId) {
-      const rules = await query<{
-        summary: string;
-        detail: string | null;
-        rule_type: string;
-        confidence: string;
-        owner_name: string | null;
-      }>(
-        `SELECT summary, detail, rule_type, confidence, owner_name
-         FROM rules
-         WHERE workflow_id = $1
-         ORDER BY rule_type, confidence DESC`,
-        [workflowId]
+    if (!workflowId) {
+      return new Response(
+        "Please navigate to a specific workflow to ask questions.",
+        { headers: { "Content-Type": "text/plain; charset=utf-8" } }
       );
-
-      const counts: Record<string, number> = {};
-      for (const r of rules) {
-        if (r.owner_name) counts[r.owner_name] = (counts[r.owner_name] ?? 0) + 1;
-      }
-      const topOwner = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "the process owner";
-
-      const rulesContext = rules
-        .map((r) => {
-          const ruleType = r.rule_type.charAt(0).toUpperCase() + r.rule_type.slice(1).toLowerCase();
-          const lines = [`[${ruleType}] (confidence: ${r.confidence}) — ${r.summary}`];
-          if (r.detail) lines.push(`Detail: ${r.detail}`);
-          return lines.join("\n");
-        })
-        .join("\n\n");
-
-      systemPrompt = `${WORKFLOW_PROMPT_TEMPLATE.replace("[owner_name]", topOwner)}\n\n=== DOCUMENTED RULES — YOUR ONLY SOURCE OF TRUTH ===\n${rulesContext}\n=== END OF DOCUMENTED RULES ===`;
-    } else {
-      const rows = await query<{
-        workflow_id: string;
-        workflow_name: string;
-        department: string;
-        summary: string;
-      }>(
-        `SELECT w.id AS workflow_id, w.name AS workflow_name, w.department, r.summary
-         FROM workflows w
-         LEFT JOIN rules r ON r.workflow_id = w.id
-         ORDER BY w.department, w.name`
-      );
-
-      const workflowMap = new Map<string, { name: string; department: string; summaries: string[] }>();
-      for (const row of rows) {
-        if (!workflowMap.has(row.workflow_id)) {
-          workflowMap.set(row.workflow_id, { name: row.workflow_name, department: row.department, summaries: [] });
-        }
-        if (row.summary) workflowMap.get(row.workflow_id)!.summaries.push(row.summary);
-      }
-
-      const knowledgeBase = Array.from(workflowMap.values())
-        .map((w) => {
-          const rules = w.summaries.length
-            ? w.summaries.map((s) => `  - ${s}`).join("\n")
-            : "  (no rules documented yet)";
-          return `Workflow: ${w.name} (${w.department})\n${rules}`;
-        })
-        .join("\n\n");
-
-      systemPrompt = `${DISCOVERY_PROMPT}\n\n--- DOCUMENTED WORKFLOWS ---\n${knowledgeBase}`;
     }
+
+    const rules = await query<{
+      summary: string;
+      detail: string | null;
+      rule_type: string;
+      owner_name: string | null;
+    }>(
+      `SELECT summary, detail, rule_type, owner_name
+       FROM rules
+       WHERE workflow_id = $1
+       ORDER BY rule_type`,
+      [workflowId]
+    );
+
+    const counts: Record<string, number> = {};
+    for (const r of rules) {
+      if (r.owner_name) counts[r.owner_name] = (counts[r.owner_name] ?? 0) + 1;
+    }
+    const topOwner = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "the process owner";
+
+    const rulesContext = rules
+      .map((r) => {
+        const ruleType = r.rule_type.charAt(0).toUpperCase() + r.rule_type.slice(1).toLowerCase();
+        const lines = [`Rule (${ruleType}): ${r.summary}`];
+        if (r.detail) lines.push(`Detail: ${r.detail}`);
+        return lines.join("\n");
+      })
+      .join("\n\n");
+
+    const systemPrompt = `${WORKFLOW_PROMPT_TEMPLATE.replace("[owner_name]", topOwner)}\n\n=== DOCUMENTED RULES — YOUR ONLY SOURCE OF TRUTH ===\n${rulesContext}\n=== END OF DOCUMENTED RULES ===`;
 
     const stream = await chat(messages, systemPrompt);
 
