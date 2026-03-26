@@ -40,6 +40,13 @@ export default function ValidationReviewPage() {
   const [dept, setDept] = useState("All");
   const [loading, setLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
+  const [me, setMe] = useState<{ role: string } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setMe(data); });
+  }, []);
 
   useEffect(() => {
     fetch("/api/validate/pending")
@@ -391,16 +398,18 @@ export default function ValidationReviewPage() {
                               >
                                 Skip
                               </button>
-                              <button
-                                onClick={() => setConfirmingDelete(rule.id)}
-                                style={{
-                                  fontSize: 12, padding: "4px 12px", borderRadius: 6,
-                                  border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                Delete
-                              </button>
+                              {["editor", "admin"].includes(me?.role ?? "") && (
+                                <button
+                                  onClick={() => setConfirmingDelete(rule.id)}
+                                  style={{
+                                    fontSize: 12, padding: "4px 12px", borderRadius: 6,
+                                    border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              )}
                             </>
                           )}
                         </div>

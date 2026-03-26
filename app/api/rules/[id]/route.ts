@@ -3,10 +3,10 @@ import { query } from "@/lib/db";
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: ruleId } = params;
+    const { id: ruleId } = await params;
 
     if (!ruleId) {
       return NextResponse.json({ error: "ruleId is required" }, { status: 400 });

@@ -78,6 +78,7 @@ export default function WorkflowPage() {
   const [allWorkflows, setAllWorkflows] = useState<AllWorkflow[]>([]);
   const [grouped, setGrouped] = useState<GroupedWorkflows>({});
   const [openDepts, setOpenDepts] = useState<Record<string, boolean>>({});
+  const [me, setMe] = useState<{ id: string; email: string; role: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [flaggedRules, setFlaggedRules] = useState<Set<string>>(new Set());
   const [flaggingRule, setFlaggingRule] = useState<string | null>(null);
@@ -91,6 +92,12 @@ export default function WorkflowPage() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setMe(data); });
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -312,6 +319,26 @@ export default function WorkflowPage() {
           <a href="/gaps" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
             Flagged gaps
           </a>
+          {me?.role === "admin" && (
+            <a href="/admin/users" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
+              Admin
+            </a>
+          )}
+          {me && (
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--sidebar-border)" }}>
+              <p style={{ fontSize: 11, color: "var(--muted-light)", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {me.email}
+              </p>
+              <p style={{ fontSize: 10, color: "var(--muted-light)", opacity: 0.7, marginBottom: 6, textTransform: "capitalize" }}>
+                {me.role}
+              </p>
+              <form action="/api/auth/logout" method="POST">
+                <button type="submit" style={{ fontSize: 11, color: "var(--muted)", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>
+                  Sign out
+                </button>
+              </form>
+            </div>
+          )}
         </div>
       </aside>
 
@@ -405,7 +432,7 @@ export default function WorkflowPage() {
                         )}
 
                         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-                          {!isValidated && (
+                          {!isValidated && ["validator", "editor", "admin"].includes(me?.role ?? "") && (
                             isEnteringName ? (
                               <>
                                 <input
@@ -453,20 +480,22 @@ export default function WorkflowPage() {
                             )
                           )}
 
-                          <button
-                            onClick={() => handleFlag(rule)}
-                            disabled={flaggedRules.has(rule.id) || flaggingRule === rule.id}
-                            style={{
-                              fontSize: 11, padding: "2px 10px", borderRadius: 6,
-                              border: "1px solid var(--card-border)",
-                              background: flaggedRules.has(rule.id) ? "var(--card-hover-bg)" : "none",
-                              color: flaggedRules.has(rule.id) ? "var(--muted-light)" : "var(--muted)",
-                              cursor: flaggedRules.has(rule.id) || flaggingRule === rule.id ? "not-allowed" : "pointer",
-                              opacity: flaggingRule === rule.id ? 0.5 : 1,
-                            }}
-                          >
-                            {flaggedRules.has(rule.id) ? "Flagged" : flaggingRule === rule.id ? "Flagging…" : "Flag as outdated"}
-                          </button>
+                          {["validator", "editor", "admin"].includes(me?.role ?? "") && (
+                            <button
+                              onClick={() => handleFlag(rule)}
+                              disabled={flaggedRules.has(rule.id) || flaggingRule === rule.id}
+                              style={{
+                                fontSize: 11, padding: "2px 10px", borderRadius: 6,
+                                border: "1px solid var(--card-border)",
+                                background: flaggedRules.has(rule.id) ? "var(--card-hover-bg)" : "none",
+                                color: flaggedRules.has(rule.id) ? "var(--muted-light)" : "var(--muted)",
+                                cursor: flaggedRules.has(rule.id) || flaggingRule === rule.id ? "not-allowed" : "pointer",
+                                opacity: flaggingRule === rule.id ? 0.5 : 1,
+                              }}
+                            >
+                              {flaggedRules.has(rule.id) ? "Flagged" : flaggingRule === rule.id ? "Flagging…" : "Flag as outdated"}
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -477,7 +506,7 @@ export default function WorkflowPage() {
 
                       {/* Detail */}
                       {rule.detail && (
-                        <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.7, marginBottom: 10 }}>
+                        <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.7, marginBottom: 10, overflow: "visible", display: "block", WebkitLineClamp: "unset", whiteSpace: "pre-wrap" }}>
                           {rule.detail}
                         </p>
                       )}

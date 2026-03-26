@@ -58,6 +58,9 @@ export default function HomePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
+  // Current user
+  const [me, setMe] = useState<{ id: string; email: string; role: string } | null>(null);
+
   // Paste text state
   const [pasteText, setPasteText] = useState("");
   const [pasteWorkflow, setPasteWorkflow] = useState("");
@@ -68,6 +71,12 @@ export default function HomePage() {
   const [pasteLoading, setPasteLoading] = useState(false);
   const [pasteResult, setPasteResult] = useState<{ rules_extracted: number; rules_written: number } | null>(null);
   const [pasteError, setPasteError] = useState("");
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setMe(data); });
+  }, []);
 
   useEffect(() => {
     fetch("/api/workflows")
@@ -324,6 +333,26 @@ export default function HomePage() {
           <a href="/gaps" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
             Flagged gaps
           </a>
+          {me?.role === "admin" && (
+            <a href="/admin/users" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
+              Admin
+            </a>
+          )}
+          {me && (
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--sidebar-border)" }}>
+              <p style={{ fontSize: 11, color: "var(--muted-light)", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {me.email}
+              </p>
+              <p style={{ fontSize: 10, color: "var(--muted-light)", opacity: 0.7, marginBottom: 6, textTransform: "capitalize" }}>
+                {me.role}
+              </p>
+              <form action="/api/auth/logout" method="POST">
+                <button type="submit" style={{ fontSize: 11, color: "var(--muted)", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>
+                  Sign out
+                </button>
+              </form>
+            </div>
+          )}
         </div>
       </aside>
 

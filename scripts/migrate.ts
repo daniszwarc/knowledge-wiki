@@ -144,6 +144,46 @@ async function migrate() {
       ON rules USING GIN (to_tsvector('english', coalesce(summary, '') || ' ' || coalesce(detail, '')))
     `);
 
+    // users table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email         TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        role          TEXT NOT NULL DEFAULT 'viewer'
+          CHECK (role IN ('viewer', 'validator', 'editor', 'admin')),
+        totp_secret   TEXT,
+        totp_enabled  BOOLEAN DEFAULT false,
+        created_at    TIMESTAMPTZ DEFAULT now(),
+        last_login    TIMESTAMPTZ,
+        created_by    TEXT
+      )
+    `);
+
+    // sessions table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
+        token_hash  TEXT UNIQUE NOT NULL,
+        expires_at  TIMESTAMPTZ NOT NULL,
+        created_at  TIMESTAMPTZ DEFAULT now(),
+        ip_address  TEXT
+      )
+    `);
+
+    // temp_tokens table for TOTP setup/verify flow
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS temp_tokens (
+        id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id       UUID REFERENCES users(id) ON DELETE CASCADE,
+        token_hash    TEXT UNIQUE NOT NULL,
+        totp_secret   TEXT,
+        expires_at    TIMESTAMPTZ NOT NULL,
+        created_at    TIMESTAMPTZ DEFAULT now()
+      )
+    `);
+
     await client.query("COMMIT");
     console.log("Migration completed successfully");
   } catch (err) {
