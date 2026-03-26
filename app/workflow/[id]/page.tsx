@@ -15,6 +15,7 @@ interface Rule {
   owner_email: string | null;
   owner_name: string | null;
   source: string | null;
+  source_url: string | null;
 }
 
 interface Workflow {
@@ -40,12 +41,6 @@ const DEPT_ICONS: Record<string, string> = {
   Finance: "₣",
   Operations: "⚙",
   IT: "⌨",
-};
-
-const CONFIDENCE_LABEL: Record<string, string> = {
-  high: "High confidence",
-  medium: "Medium confidence",
-  low: "Low confidence",
 };
 
 function confidenceBadgeStyle(c: "high" | "medium" | "low") {
@@ -87,6 +82,9 @@ export default function WorkflowPage() {
   const [flaggedRules, setFlaggedRules] = useState<Set<string>>(new Set());
   const [flaggingRule, setFlaggingRule] = useState<string | null>(null);
   const [highlightedRule, setHighlightedRule] = useState<string | null>(null);
+  const [validatedRules, setValidatedRules] = useState<Set<string>>(new Set());
+  const [validatingRule, setValidatingRule] = useState<string | null>(null);
+  const [validatorInput, setValidatorInput] = useState("");
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
@@ -150,6 +148,32 @@ export default function WorkflowPage() {
       setFlaggedRules((prev) => new Set(prev).add(rule.id));
     } finally {
       setFlaggingRule(null);
+    }
+  }
+
+  async function handleValidate(ruleId: string) {
+    const name = validatorInput.trim();
+    if (!name) return;
+    setValidatingRule(null);
+    setValidatorInput("");
+    try {
+      await fetch("/api/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ruleId, validatedBy: name }),
+      });
+      setValidatedRules((prev) => {
+        const next = new Set(prev).add(ruleId);
+        setWorkflow((wf) => {
+          if (!wf) return wf;
+          const total = wf.rules.length;
+          const validated = wf.rules.filter((r) => r.stakeholder_validated || next.has(r.id)).length;
+          return { ...wf, completeness_score: total > 0 ? Math.round((validated / total) * 100) : 0 };
+        });
+        return next;
+      });
+    } catch {
+      // silent — badge stays unchanged on error
     }
   }
 
@@ -223,8 +247,8 @@ export default function WorkflowPage() {
           style={{ padding: "18px 18px 14px", borderBottom: "1px solid var(--sidebar-border)", cursor: "pointer" }}
           onClick={() => router.push("/")}
         >
-          <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)" }}>
-            Knowledge Wiki
+          <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", color: "var(--muted)" }}>
+            APi GROUP - Knowledge Wiki
           </span>
         </div>
 
@@ -301,6 +325,9 @@ export default function WorkflowPage() {
           <a href="/experts" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
             Subject matter experts
           </a>
+          <a href="/validate" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
+            Validation review
+          </a>
           <a href="/gaps" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
             Flagged gaps
           </a>
@@ -340,7 +367,7 @@ export default function WorkflowPage() {
                 {workflow.completeness_score}% complete
               </div>
               <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 6 }}>
-                {workflow.rules.length} rules · {workflow.rules.filter((r) => r.stakeholder_validated).length} validated
+                {workflow.rules.length} rules · {workflow.rules.filter((r) => r.stakeholder_validated || validatedRules.has(r.id)).length} validated
               </div>
             </div>
           </div>
@@ -368,6 +395,9 @@ export default function WorkflowPage() {
                   const amber = isAmber(rule);
                   const isHighlighted = highlightedRule === rule.id;
 
+                  const isValidated = rule.stakeholder_validated || validatedRules.has(rule.id);
+                  const isEnteringName = validatingRule === rule.id;
+
                   return (
                     <div
                       key={rule.id}
@@ -381,13 +411,9 @@ export default function WorkflowPage() {
                         outlineOffset: 2,
                       }}
                     >
-                      {/* Top row: badges + flag button */}
+                      {/* Top row: badges + actions */}
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-                        <span style={{ ...confidenceBadgeStyle(rule.confidence), fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99 }}>
-                          {CONFIDENCE_LABEL[rule.confidence]}
-                        </span>
-
-                        {rule.stakeholder_validated ? (
+                        {isValidated ? (
                           <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, background: "#dbeafe", color: "#1e40af", border: "1px solid #bfdbfe" }}>
                             ✓ Validated
                           </span>
@@ -397,23 +423,70 @@ export default function WorkflowPage() {
                           </span>
                         )}
 
-                        <button
-                          onClick={() => handleFlag(rule)}
-                          disabled={flaggedRules.has(rule.id) || flaggingRule === rule.id}
-                          style={{
-                            marginLeft: "auto",
-                            fontSize: 11,
-                            padding: "2px 10px",
-                            borderRadius: 6,
-                            border: "1px solid var(--card-border)",
-                            background: flaggedRules.has(rule.id) ? "var(--card-hover-bg)" : "none",
-                            color: flaggedRules.has(rule.id) ? "var(--muted-light)" : "var(--muted)",
-                            cursor: flaggedRules.has(rule.id) || flaggingRule === rule.id ? "not-allowed" : "pointer",
-                            opacity: flaggingRule === rule.id ? 0.5 : 1,
-                          }}
-                        >
-                          {flaggedRules.has(rule.id) ? "Flagged" : flaggingRule === rule.id ? "Flagging…" : "Flag as outdated"}
-                        </button>
+                        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+                          {!isValidated && (
+                            isEnteringName ? (
+                              <>
+                                <input
+                                  autoFocus
+                                  className="search-input"
+                                  value={validatorInput}
+                                  onChange={(e) => setValidatorInput(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") handleValidate(rule.id);
+                                    if (e.key === "Escape") { setValidatingRule(null); setValidatorInput(""); }
+                                  }}
+                                  placeholder="Your name"
+                                  style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, width: 120 }}
+                                />
+                                <button
+                                  onClick={() => handleValidate(rule.id)}
+                                  disabled={!validatorInput.trim()}
+                                  style={{
+                                    fontSize: 11, padding: "2px 10px", borderRadius: 6,
+                                    border: "1px solid #86efac", background: "#f0fdf4", color: "#15803d",
+                                    cursor: validatorInput.trim() ? "pointer" : "not-allowed",
+                                    opacity: validatorInput.trim() ? 1 : 0.5,
+                                  }}
+                                >
+                                  Confirm
+                                </button>
+                                <button
+                                  onClick={() => { setValidatingRule(null); setValidatorInput(""); }}
+                                  style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, border: "1px solid var(--card-border)", background: "none", color: "var(--muted)", cursor: "pointer" }}
+                                >
+                                  ✕
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => setValidatingRule(rule.id)}
+                                style={{
+                                  fontSize: 11, padding: "2px 10px", borderRadius: 6,
+                                  border: "1px solid #86efac", background: "#f0fdf4", color: "#15803d",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Mark as validated
+                              </button>
+                            )
+                          )}
+
+                          <button
+                            onClick={() => handleFlag(rule)}
+                            disabled={flaggedRules.has(rule.id) || flaggingRule === rule.id}
+                            style={{
+                              fontSize: 11, padding: "2px 10px", borderRadius: 6,
+                              border: "1px solid var(--card-border)",
+                              background: flaggedRules.has(rule.id) ? "var(--card-hover-bg)" : "none",
+                              color: flaggedRules.has(rule.id) ? "var(--muted-light)" : "var(--muted)",
+                              cursor: flaggedRules.has(rule.id) || flaggingRule === rule.id ? "not-allowed" : "pointer",
+                              opacity: flaggingRule === rule.id ? 0.5 : 1,
+                            }}
+                          >
+                            {flaggedRules.has(rule.id) ? "Flagged" : flaggingRule === rule.id ? "Flagging…" : "Flag as outdated"}
+                          </button>
+                        </div>
                       </div>
 
                       {/* Summary */}
@@ -450,6 +523,19 @@ export default function WorkflowPage() {
                             <span style={{ fontStyle: "italic", opacity: 0.8 }}>{rule.stakeholder_notes}</span>
                           </>
                         )}
+                        {rule.source_url && (
+                          <>
+                            <span style={{ opacity: 0.4 }}>·</span>
+                            <a
+                              href={rule.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: "var(--muted)", textDecoration: "none", fontWeight: 500 }}
+                            >
+                              View source document
+                            </a>
+                          </>
+                        )}
                       </div>
                     </div>
                   );
@@ -467,13 +553,32 @@ export default function WorkflowPage() {
         background: "var(--sidebar-bg)",
       }}>
         {/* Chat header */}
-        <div style={{ padding: "18px 16px 14px", borderBottom: "1px solid var(--sidebar-border)" }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", marginBottom: 2 }}>
-            Ask about this workflow
-          </p>
-          <p style={{ fontSize: 11, color: "var(--muted)" }}>
-            Answers are grounded in the rules shown on the left.
-          </p>
+        <div style={{ padding: "18px 16px 14px", borderBottom: "1px solid var(--sidebar-border)", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", marginBottom: 2 }}>
+              Ask about this workflow
+            </p>
+            <p style={{ fontSize: 11, color: "var(--muted)" }}>
+              Answers are grounded in the rules shown on the left.
+            </p>
+          </div>
+          {chatMessages.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setChatMessages([])}
+              style={{
+                fontSize: 11,
+                color: "var(--muted-light)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "2px 4px",
+                flexShrink: 0,
+              }}
+            >
+              Clear
+            </button>
+          )}
         </div>
 
         {/* Messages */}

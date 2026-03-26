@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -41,6 +43,31 @@ export default function HomePage() {
   const [chatLoading, setChatLoading] = useState(false);
   const [openDepts, setOpenDepts] = useState<Record<string, boolean>>({});
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
+
+  // Upload state
+  const [uploadTab, setUploadTab] = useState<"file" | "text">("file");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadWorkflow, setUploadWorkflow] = useState("");
+  const [uploadDept, setUploadDept] = useState("");
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStage, setUploadStage] = useState("");
+  const [uploadResult, setUploadResult] = useState<{ rules_extracted: number; rules_written: number } | null>(null);
+  const [uploadError, setUploadError] = useState("");
+  const [uploadDragging, setUploadDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Paste text state
+  const [pasteText, setPasteText] = useState("");
+  const [pasteWorkflow, setPasteWorkflow] = useState("");
+  const [pasteDept, setPasteDept] = useState("");
+  const [pasteOwnerName, setPasteOwnerName] = useState("");
+  const [pasteOwnerEmail, setPasteOwnerEmail] = useState("");
+  const [pasteSource, setPasteSource] = useState("");
+  const [pasteLoading, setPasteLoading] = useState(false);
+  const [pasteResult, setPasteResult] = useState<{ rules_extracted: number; rules_written: number } | null>(null);
+  const [pasteError, setPasteError] = useState("");
 
   useEffect(() => {
     fetch("/api/workflows")
@@ -89,6 +116,116 @@ export default function HomePage() {
       }
     } finally {
       setChatLoading(false);
+    }
+  }
+
+  function refreshWorkflows() {
+    fetch("/api/workflows")
+      .then((r) => r.json())
+      .then((data: Workflow[]) => {
+        const g: GroupedWorkflows = {};
+        for (const w of data) {
+          if (!g[w.department]) g[w.department] = [];
+          g[w.department].push(w);
+        }
+        setWorkflows(data);
+        setGrouped(g);
+        const depts = Object.keys(g).sort();
+        setDepartments(depts);
+        setOpenDepts((prev) => {
+          const next = { ...prev };
+          depts.forEach((d) => { if (!(d in next)) next[d] = true; });
+          return next;
+        });
+      });
+  }
+
+  async function handleUpload(e: { preventDefault(): void }) {
+    e.preventDefault();
+    if (!uploadFile || !uploadWorkflow.trim() || !uploadDept.trim() || uploadLoading) return;
+    setUploadLoading(true);
+    setUploadResult(null);
+    setUploadError("");
+    setUploadProgress(0);
+
+    // Simulated progress stages: upload → extracting → writing
+    const stages: [number, number, string][] = [
+      [400,  15, "Uploading file…"],
+      [1200, 35, "Extracting rules with AI…"],
+      [5000, 60, "Extracting rules with AI…"],
+      [12000, 80, "Almost done…"],
+    ];
+    uploadTimersRef.current.forEach(clearTimeout);
+    uploadTimersRef.current = stages.map(([delay, pct, label]) =>
+      setTimeout(() => { setUploadProgress(pct); setUploadStage(label); }, delay)
+    );
+
+    try {
+      const fd = new FormData();
+      fd.append("file", uploadFile);
+      fd.append("workflow_name", uploadWorkflow.trim());
+      fd.append("department", uploadDept.trim());
+      const res = await fetch("http://localhost:8000/ingest", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail ?? "Upload failed");
+      }
+      const json = await res.json();
+      uploadTimersRef.current.forEach(clearTimeout);
+      setUploadProgress(100);
+      setUploadStage("Done");
+      setUploadResult({ rules_extracted: json.rules_extracted, rules_written: json.rules_written });
+      setUploadFile(null);
+      setUploadWorkflow("");
+      setUploadDept("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      refreshWorkflows();
+    } catch (err) {
+      uploadTimersRef.current.forEach(clearTimeout);
+      setUploadProgress(0);
+      setUploadStage("");
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploadLoading(false);
+    }
+  }
+
+  async function handlePaste(e: { preventDefault(): void }) {
+    e.preventDefault();
+    if (!pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim() || pasteLoading) return;
+    setPasteLoading(true);
+    setPasteResult(null);
+    setPasteError("");
+    try {
+      const res = await fetch("http://localhost:8000/ingest/text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: pasteText.trim(),
+          workflow_name: pasteWorkflow.trim(),
+          department: pasteDept.trim(),
+          ...(pasteOwnerName.trim() && { owner_name: pasteOwnerName.trim() }),
+          ...(pasteOwnerEmail.trim() && { owner_email: pasteOwnerEmail.trim() }),
+          ...(pasteSource.trim() && { source: pasteSource.trim() }),
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail ?? "Submission failed");
+      }
+      const json = await res.json();
+      setPasteResult({ rules_extracted: json.rules_extracted, rules_written: json.rules_written });
+      setPasteText("");
+      setPasteWorkflow("");
+      setPasteDept("");
+      setPasteOwnerName("");
+      setPasteOwnerEmail("");
+      setPasteSource("");
+      refreshWorkflows();
+    } catch (err) {
+      setPasteError(err instanceof Error ? err.message : "Submission failed");
+    } finally {
+      setPasteLoading(false);
     }
   }
 
@@ -210,18 +347,14 @@ export default function HomePage() {
         </nav>
 
         {/* Footer */}
-        <div style={{
-          padding: "12px 16px 56px",
-          borderTop: "1px solid var(--sidebar-border)",
-          position: "sticky",
-          bottom: 0,
-          background: "var(--sidebar-bg)",
-          zIndex: 1,
-        }}>
-          <a href="/experts" style={{ display: "block", fontSize: 12, color: "var(--muted)", textDecoration: "none", padding: "5px 0" }}>
+        <div style={{ padding: "10px 14px 14px", borderTop: "1px solid var(--sidebar-border)" }}>
+          <a href="/experts" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
             Subject matter experts
           </a>
-          <a href="/gaps" style={{ display: "block", fontSize: 12, color: "var(--muted)", textDecoration: "none", padding: "5px 0" }}>
+          <a href="/validate" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
+            Validation review
+          </a>
+          <a href="/gaps" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
             Flagged gaps
           </a>
         </div>
@@ -321,13 +454,229 @@ export default function HomePage() {
                 marginTop: 16,
                 paddingTop: 16,
                 borderTop: "1px solid var(--card-border)",
-                fontSize: 13,
-                color: "var(--foreground)",
-                lineHeight: 1.7,
-                whiteSpace: "pre-wrap",
               }}>
-                {chatResponse}
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setChatResponse("")}
+                    style={{
+                      fontSize: 11,
+                      color: "var(--muted-light)",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: "2px 4px",
+                    }}
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div style={{
+                  fontSize: 13,
+                  color: "var(--foreground)",
+                  lineHeight: 1.7,
+                  whiteSpace: "pre-wrap",
+                }}>
+                  {chatResponse}
+                </div>
               </div>
+            )}
+          </div>
+
+          {/* Document upload */}
+          <div style={{
+            marginBottom: 40,
+            padding: 20,
+            borderRadius: 12,
+            border: "1px solid var(--card-border)",
+            background: "var(--sidebar-bg)",
+          }}>
+            {/* Tab switcher */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
+              {(["file", "text"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setUploadTab(tab)}
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 500,
+                    padding: "5px 12px",
+                    borderRadius: 6,
+                    border: "1px solid var(--card-border)",
+                    cursor: "pointer",
+                    background: uploadTab === tab ? "var(--foreground)" : "transparent",
+                    color: uploadTab === tab ? "var(--background)" : "var(--muted)",
+                  }}
+                >
+                  {tab === "file" ? "Upload file" : "Paste text"}
+                </button>
+              ))}
+            </div>
+
+            {uploadTab === "file" ? (
+              <form onSubmit={handleUpload}>
+                {/* Drop zone */}
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setUploadDragging(true); }}
+                  onDragLeave={() => setUploadDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setUploadDragging(false);
+                    const f = e.dataTransfer.files[0];
+                    if (f) setUploadFile(f);
+                  }}
+                  style={{
+                    border: `1px dashed ${uploadDragging ? "var(--foreground)" : "var(--card-border)"}`,
+                    borderRadius: 8,
+                    padding: "18px 14px",
+                    textAlign: "center",
+                    cursor: "pointer",
+                    marginBottom: 10,
+                    background: uploadDragging ? "var(--card-hover-bg)" : "transparent",
+                    transition: "background 0.15s, border-color 0.15s",
+                  }}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.docx,.txt"
+                    style={{ display: "none" }}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) setUploadFile(f); }}
+                  />
+                  <span style={{ fontSize: 13, color: uploadFile ? "var(--foreground)" : "var(--muted-light)" }}>
+                    {uploadFile ? uploadFile.name : "Drop a PDF, DOCX, or TXT file here, or click to browse"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                  <input
+                    className="search-input"
+                    value={uploadWorkflow}
+                    onChange={(e) => setUploadWorkflow(e.target.value)}
+                    placeholder="Workflow name"
+                    style={{ flex: 2, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                  />
+                  <input
+                    className="search-input"
+                    value={uploadDept}
+                    onChange={(e) => setUploadDept(e.target.value)}
+                    placeholder="Department"
+                    style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={uploadLoading || !uploadFile || !uploadWorkflow.trim() || !uploadDept.trim()}
+                    style={{
+                      padding: "9px 18px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "none",
+                      background: "var(--foreground)", color: "var(--background)",
+                      cursor: uploadLoading || !uploadFile || !uploadWorkflow.trim() || !uploadDept.trim() ? "not-allowed" : "pointer",
+                      opacity: uploadLoading || !uploadFile || !uploadWorkflow.trim() || !uploadDept.trim() ? 0.45 : 1,
+                      flexShrink: 0, whiteSpace: "nowrap",
+                    }}
+                  >
+                    {uploadLoading ? "Extracting rules…" : "Upload"}
+                  </button>
+                </div>
+                {uploadLoading && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>{uploadStage}</span>
+                      <span style={{ fontSize: 12, color: "var(--muted-light)" }}>{uploadProgress}%</span>
+                    </div>
+                    <div style={{ height: 4, borderRadius: 99, background: "var(--card-border)", overflow: "hidden" }}>
+                      <div style={{
+                        height: "100%", borderRadius: 99, background: "var(--foreground)",
+                        width: `${uploadProgress}%`,
+                        transition: "width 0.6s ease",
+                      }} />
+                    </div>
+                  </div>
+                )}
+                {uploadResult && (
+                  <div style={{ fontSize: 13, color: "#15803d", paddingTop: 4 }}>
+                    Done — {uploadResult.rules_extracted} rule{uploadResult.rules_extracted !== 1 ? "s" : ""} extracted,{" "}
+                    {uploadResult.rules_written} written to the wiki.
+                  </div>
+                )}
+                {uploadError && (
+                  <div style={{ fontSize: 13, color: "#b91c1c", paddingTop: 4 }}>{uploadError}</div>
+                )}
+              </form>
+            ) : (
+              <form onSubmit={handlePaste}>
+                <textarea
+                  className="search-input"
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  placeholder="Paste email content, meeting notes, or any text..."
+                  rows={6}
+                  style={{ width: "100%", padding: "9px 14px", fontSize: 13, borderRadius: 8, resize: "vertical", marginBottom: 10, fontFamily: "inherit", boxSizing: "border-box" }}
+                />
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <input
+                    className="search-input"
+                    value={pasteWorkflow}
+                    onChange={(e) => setPasteWorkflow(e.target.value)}
+                    placeholder="Workflow name"
+                    style={{ flex: 2, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                  />
+                  <input
+                    className="search-input"
+                    value={pasteDept}
+                    onChange={(e) => setPasteDept(e.target.value)}
+                    placeholder="Department"
+                    style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                  />
+                </div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                  <input
+                    className="search-input"
+                    value={pasteOwnerName}
+                    onChange={(e) => setPasteOwnerName(e.target.value)}
+                    placeholder="Owner name (optional)"
+                    style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                  />
+                  <input
+                    className="search-input"
+                    value={pasteOwnerEmail}
+                    onChange={(e) => setPasteOwnerEmail(e.target.value)}
+                    placeholder="Owner email (optional)"
+                    style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                  />
+                </div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                  <input
+                    className="search-input"
+                    value={pasteSource}
+                    onChange={(e) => setPasteSource(e.target.value)}
+                    placeholder="e.g. Email from Linda Chen, March 2026 (optional)"
+                    style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={pasteLoading || !pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim()}
+                    style={{
+                      padding: "9px 18px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "none",
+                      background: "var(--foreground)", color: "var(--background)",
+                      cursor: pasteLoading || !pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim() ? "not-allowed" : "pointer",
+                      opacity: pasteLoading || !pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim() ? 0.45 : 1,
+                      flexShrink: 0, whiteSpace: "nowrap",
+                    }}
+                  >
+                    {pasteLoading ? "Extracting rules…" : "Submit"}
+                  </button>
+                </div>
+                {pasteResult && (
+                  <div style={{ fontSize: 13, color: "#15803d", paddingTop: 4 }}>
+                    Done — {pasteResult.rules_extracted} rule{pasteResult.rules_extracted !== 1 ? "s" : ""} extracted,{" "}
+                    {pasteResult.rules_written} written to the wiki.
+                  </div>
+                )}
+                {pasteError && (
+                  <div style={{ fontSize: 13, color: "#b91c1c", paddingTop: 4 }}>{pasteError}</div>
+                )}
+              </form>
             )}
           </div>
 

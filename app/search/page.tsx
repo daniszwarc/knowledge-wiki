@@ -17,19 +17,6 @@ interface SearchResult {
   rrf_score: number;
 }
 
-const CONFIDENCE_LABEL: Record<string, string> = {
-  high: "High confidence",
-  medium: "Medium confidence",
-  low: "Low confidence",
-};
-
-function confidenceBadgeStyle(c: "high" | "medium" | "low") {
-  if (c === "high")
-    return { background: "#dcfce7", color: "#15803d", border: "1px solid #bbf7d0" };
-  if (c === "medium")
-    return { background: "#fef9c3", color: "#a16207", border: "1px solid #fde047" };
-  return { background: "#fee2e2", color: "#b91c1c", border: "1px solid #fecaca" };
-}
 
 function SearchResults() {
   const router = useRouter();
@@ -160,10 +147,6 @@ function SearchResults() {
                     textTransform: "capitalize",
                   }}>
                     {r.rule_type}
-                  </span>
-
-                  <span style={{ ...confidenceBadgeStyle(r.confidence), fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99 }}>
-                    {CONFIDENCE_LABEL[r.confidence]}
                   </span>
 
                   {!r.stakeholder_validated && (

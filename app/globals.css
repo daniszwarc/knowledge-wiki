@@ -81,6 +81,24 @@ body {
   border-color: var(--accent-border);
 }
 
+/* Sidebar footer */
+.sidebar-footer {
+  padding: 12px 16px 56px;
+  border-top: 1px solid var(--sidebar-border);
+  position: sticky;
+  bottom: 0;
+  background: var(--sidebar-bg);
+  z-index: 1;
+}
+
+.sidebar-footer-link {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 5px 0;
+}
+
 /* Divider */
 .dept-divider {
   border-color: var(--card-border);
