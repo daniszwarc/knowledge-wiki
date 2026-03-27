@@ -1,0 +1,71 @@
+version: "3.9"
+
+services:
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: always
+    environment:
+      POSTGRES_DB: knowledge_wiki
+      POSTGRES_USER: wikiuser
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wikiuser -d knowledge_wiki"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama
+    restart: always
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+
+  wiki:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://wikiuser:${POSTGRES_PASSWORD}@postgres:5432/knowledge_wiki
+      OLLAMA_BASE_URL: http://ollama:11434/v1
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.2:latest}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+    ports:
+      - "3000:3000"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.wiki.rule=Host(`${WIKI_DOMAIN}`)
+      - traefik.http.routers.wiki.entrypoints=websecure
+      - traefik.http.routers.wiki.tls=true
+      - traefik.http.routers.wiki.tls.certresolver=mytlschallenge
+      - traefik.http.services.wiki.loadbalancer.server.port=3000
+
+  pipeline:
+    build:
+      context: ./pipeline
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://wikiuser:${POSTGRES_PASSWORD}@postgres:5432/knowledge_wiki
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:latest}
+      WIKI_API_URL: http://wiki:3000
+      EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:
+  ollama_data:

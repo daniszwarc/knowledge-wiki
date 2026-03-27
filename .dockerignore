@@ -1,0 +1,10 @@
+node_modules
+.next
+.env.local
+.env
+pipeline/.venv
+pipeline/__pycache__
+reference
+.git
+*.log
+.DS_Store

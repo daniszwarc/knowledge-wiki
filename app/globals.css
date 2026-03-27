@@ -163,3 +163,40 @@ body {
     border-color: rgba(248,113,113,0.3);
   }
 }
+
+/* ── Article prose ─────────────────────────────────────────── */
+.article-prose { font-size: 15px; line-height: 1.8; color: var(--foreground); overflow-wrap: break-word; word-break: break-word; min-width: 0; }
+
+.ap-h1 { font-size: 21px; font-weight: 700; color: var(--foreground); line-height: 1.3; margin: 48px 0 14px; letter-spacing: -0.01em; }
+.ap-h2 { font-size: 17px; font-weight: 600; color: var(--foreground); line-height: 1.35; margin: 40px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--card-border); }
+.ap-h3 { font-size: 15px; font-weight: 600; color: var(--foreground); margin: 28px 0 8px; }
+.ap-h4 { font-size: 13px; font-weight: 600; color: var(--foreground); margin: 20px 0 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.ap-p { margin: 0 0 16px; }
+.ap-ul { padding-left: 20px; margin: 0 0 16px; list-style: disc; }
+.ap-ol { padding-left: 20px; margin: 0 0 16px; list-style: decimal; }
+.ap-li { margin-bottom: 5px; }
+
+.ap-blockquote {
+  margin: 0 0 16px;
+  padding: 12px 20px;
+  border-left: 3px solid var(--accent-border);
+  background: var(--sidebar-bg);
+  border-radius: 0 6px 6px 0;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.ap-hr { border: none; border-top: 1px solid var(--card-border); margin: 32px 0; }
+
+.ap-strong { font-weight: 600; color: var(--foreground); }
+.ap-em     { font-style: italic; color: var(--muted); }
+.ap-a      { color: var(--foreground); text-decoration: underline; text-underline-offset: 3px; }
+
+.ap-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.ap-tr    { border-bottom: 1px solid var(--card-border); }
+.ap-th    { text-align: left; padding: 8px 14px; background: var(--sidebar-bg); border-bottom: 2px solid var(--card-border); font-weight: 600; font-size: 12px; color: var(--muted); }
+.ap-td    { padding: 8px 14px; vertical-align: top; }
+
+.ap-pre  { background: var(--sidebar-bg); border: 1px solid var(--card-border); border-radius: 8px; padding: 16px 18px; margin: 0 0 20px; overflow-x: auto; }
+.ap-code { font-family: var(--font-mono), monospace; font-size: 0.875em; background: var(--card-hover-bg); padding: 2px 5px; border-radius: 4px; color: var(--foreground); }

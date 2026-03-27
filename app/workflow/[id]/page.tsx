@@ -86,6 +86,9 @@ export default function WorkflowPage() {
   const [validatedRules, setValidatedRules] = useState<Set<string>>(new Set());
   const [validatingRule, setValidatingRule] = useState<string | null>(null);
   const [validatorInput, setValidatorInput] = useState("");
+  const [confirmingDeleteWorkflow, setConfirmingDeleteWorkflow] = useState(false);
+  const [deleteWorkflowLoading, setDeleteWorkflowLoading] = useState(false);
+  const [deleteWorkflowError, setDeleteWorkflowError] = useState("");
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
@@ -137,6 +140,23 @@ export default function WorkflowPage() {
         return acc;
       }, {})
     : {};
+
+  async function handleDeleteWorkflow() {
+    setDeleteWorkflowLoading(true);
+    setDeleteWorkflowError("");
+    try {
+      const res = await fetch(`/api/workflows/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        setDeleteWorkflowError(err.error ?? "Delete failed");
+        setConfirmingDeleteWorkflow(false);
+        return;
+      }
+      router.push("/");
+    } finally {
+      setDeleteWorkflowLoading(false);
+    }
+  }
 
   async function handleFlag(rule: Rule) {
     if (flaggedRules.has(rule.id) || flaggingRule === rule.id) return;
@@ -309,7 +329,7 @@ export default function WorkflowPage() {
           ))}
         </nav>
 
-        <div style={{ padding: "10px 14px 14px", borderTop: "1px solid var(--sidebar-border)" }}>
+        <div style={{ padding: "10px 14px 80px", borderTop: "1px solid var(--sidebar-border)" }}>
           <a href="/experts" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
             Subject matter experts
           </a>
@@ -377,6 +397,49 @@ export default function WorkflowPage() {
               <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 6 }}>
                 {workflow.rules.length} rules · {workflow.rules.filter((r) => r.stakeholder_validated || validatedRules.has(r.id)).length} validated
               </div>
+              {me && ["editor", "admin"].includes(me.role) && workflow.rules.length === 0 && (
+                <div style={{ marginTop: 10 }}>
+                  {confirmingDeleteWorkflow ? (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                      <span style={{ fontSize: 11, color: "var(--muted)" }}>Delete this workflow? This cannot be undone.</span>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button
+                          onClick={handleDeleteWorkflow}
+                          disabled={deleteWorkflowLoading}
+                          style={{
+                            fontSize: 11, padding: "3px 10px", borderRadius: 6,
+                            border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c",
+                            cursor: deleteWorkflowLoading ? "not-allowed" : "pointer", fontWeight: 500,
+                            opacity: deleteWorkflowLoading ? 0.6 : 1,
+                          }}
+                        >
+                          {deleteWorkflowLoading ? "Deleting…" : "Yes, delete"}
+                        </button>
+                        <button
+                          onClick={() => setConfirmingDeleteWorkflow(false)}
+                          style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, border: "1px solid var(--card-border)", background: "none", color: "var(--muted)", cursor: "pointer" }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      {deleteWorkflowError && (
+                        <span style={{ fontSize: 11, color: "#b91c1c" }}>{deleteWorkflowError}</span>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmingDeleteWorkflow(true)}
+                      style={{
+                        fontSize: 11, padding: "3px 10px", borderRadius: 6,
+                        border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Delete workflow
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

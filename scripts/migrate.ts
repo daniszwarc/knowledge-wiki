@@ -184,6 +184,41 @@ async function migrate() {
       )
     `);
 
+    // articles table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS articles (
+        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title           TEXT NOT NULL,
+        department      TEXT,
+        workflow_name   TEXT,
+        content         TEXT NOT NULL,
+        source_filename TEXT,
+        source_url      TEXT,
+        created_at      TIMESTAMPTZ DEFAULT now(),
+        created_by      TEXT DEFAULT 'pipeline',
+        embedding       vector(768)
+      )
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS articles_embedding_idx
+      ON articles USING ivfflat (embedding vector_cosine_ops)
+      WITH (lists = 100)
+    `);
+
+    // Validation columns on articles
+    await client.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS stakeholder_validated boolean DEFAULT false`);
+    await client.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS validated_by text`);
+    await client.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS validated_at timestamptz`);
+
+    // Audit trigger on articles
+    await client.query(`DROP TRIGGER IF EXISTS audit_articles_trigger ON articles`);
+    await client.query(`
+      CREATE TRIGGER audit_articles_trigger
+      AFTER INSERT OR UPDATE OR DELETE ON articles
+      FOR EACH ROW EXECUTE FUNCTION audit_trigger_fn()
+    `);
+
     await client.query("COMMIT");
     console.log("Migration completed successfully");
   } catch (err) {

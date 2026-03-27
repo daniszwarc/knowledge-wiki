@@ -5,9 +5,10 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter, Form, HTTPException, UploadFile
 
-from api.schemas import HealthResponse, IngestResponse, IngestTextRequest, WorkflowItem
-from db.client import get_connection, list_workflows
+from api.schemas import ArticleIngestResponse, HealthResponse, IngestResponse, IngestTextRequest, WorkflowItem
+from db.client import call_article_embed, get_connection, insert_article, list_workflows
 from extract.pipeline import run_pipeline
+from extract.prompts import ARTICLE_CONVERSION_PROMPT
 from ingest.chunker import chunk_text
 from ingest.loader import load_document, load_txt
 
@@ -102,6 +103,68 @@ async def ingest_file(
         rules_written=max(0, rules_written),
         errors=state["errors"],
         rules=state["extracted_rules"],
+        source_url=source_url,
+    )
+
+
+@router.post("/ingest/article", response_model=ArticleIngestResponse)
+async def ingest_article(
+    file: UploadFile,
+    title: str = Form(...),
+    department: str = Form(...),
+    workflow_name: str = Form(""),
+    created_by: str = Form("pipeline"),
+):
+    data = await file.read()
+    filename = file.filename or "upload"
+
+    try:
+        doc = load_document(data, filename)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Failed to parse document: {e}")
+
+    if not doc.raw_text.strip():
+        raise HTTPException(status_code=422, detail="No text content extracted from document")
+
+    # Convert raw text to structured markdown via Ollama
+    prompt = ARTICLE_CONVERSION_PROMPT.format(title=title, text=doc.raw_text)
+    try:
+        resp = httpx.post(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
+            timeout=120.0,
+        )
+        resp.raise_for_status()
+        markdown_content = resp.json().get("response", doc.raw_text)
+    except Exception:
+        # Fall back to raw text if LLM call fails
+        markdown_content = doc.raw_text
+
+    job_id = str(uuid.uuid4())
+    upload_dir = UPLOADS_DIR / job_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    (upload_dir / filename).write_bytes(data)
+    source_url = f"/uploads/{job_id}/{filename}"
+
+    article_id = insert_article(
+        title=title,
+        department=department,
+        workflow_name=workflow_name,
+        content=markdown_content,
+        source_filename=filename,
+        source_url=source_url,
+        created_by=created_by,
+    )
+
+    call_article_embed(article_id, markdown_content)
+
+    word_count = len(markdown_content.split())
+    return ArticleIngestResponse(
+        article_id=article_id,
+        title=title,
+        word_count=word_count,
         source_url=source_url,
     )
 

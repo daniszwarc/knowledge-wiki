@@ -1,3 +1,22 @@
+ARTICLE_CONVERSION_PROMPT = """
+Convert the following raw document text into clean, well-structured \
+markdown suitable for a technical knowledge base.
+
+Rules:
+- Use ## for major sections, ### for subsections
+- Preserve all technical details, examples, code snippets, and \
+specific values exactly as written
+- Remove redundant bullet points — convert to prose where appropriate
+- Do not summarize or omit any content
+- Do not add commentary or introductions
+- Output only the markdown content, nothing else
+
+Document title: {title}
+
+Raw text:
+{text}
+"""
+
 EXTRACTION_PROMPT = """
 You are extracting business rules from enterprise documentation.
 

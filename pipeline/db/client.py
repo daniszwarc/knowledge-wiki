@@ -122,6 +122,47 @@ def call_embed(rule_id: str, text: str) -> bool:
         return False
 
 
+def insert_article(
+    title: str,
+    department: str,
+    workflow_name: str,
+    content: str,
+    source_filename: str,
+    source_url: Optional[str],
+    created_by: str,
+) -> str:
+    new_id = str(uuid.uuid4())
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO articles (
+                    id, title, department, workflow_name, content,
+                    source_filename, source_url, created_by
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (new_id, title, department, workflow_name or None,
+                 content, source_filename, source_url, created_by),
+            )
+            conn.commit()
+        return new_id
+    finally:
+        conn.close()
+
+
+def call_article_embed(article_id: str, text: str) -> bool:
+    try:
+        response = httpx.post(
+            f"{WIKI_API_URL}/api/articles/embed",
+            json={"articleId": article_id, "text": text},
+            timeout=60.0,
+        )
+        return response.status_code == 200
+    except Exception:
+        return False
+
+
 def list_workflows() -> list[dict]:
     conn = get_connection()
     try:

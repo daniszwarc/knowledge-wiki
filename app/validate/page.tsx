@@ -2,6 +2,13 @@
 
 import { useEffect, useState } from "react";
 
+interface PendingArticle {
+  id: string;
+  title: string;
+  department: string | null;
+  created_at: string;
+}
+
 interface PendingRule {
   id: string;
   workflow_id: string;
@@ -42,6 +49,13 @@ export default function ValidationReviewPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [me, setMe] = useState<{ role: string } | null>(null);
 
+  // Articles state
+  const [articles, setArticles] = useState<PendingArticle[]>([]);
+  const [validatingArticle, setValidatingArticle] = useState<string | null>(null);
+  const [articleValidatorInput, setArticleValidatorInput] = useState("");
+  const [confirmingDeleteArticle, setConfirmingDeleteArticle] = useState<string | null>(null);
+  const [articleActioned, setArticleActioned] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.ok ? r.json() : null)
@@ -56,6 +70,12 @@ export default function ValidationReviewPage() {
         setTotalCount(data.length);
         setLoading(false);
       });
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/articles?unvalidated=1")
+      .then((r) => r.json())
+      .then((data: PendingArticle[]) => { if (Array.isArray(data)) setArticles(data); });
   }, []);
 
   const departments = ["All", ...Array.from(new Set(rules.map((r) => r.department))).sort()];
@@ -116,6 +136,26 @@ export default function ValidationReviewPage() {
     setConfirmingDelete(null);
     setRules((prev) => prev.filter((r) => r.id !== ruleId));
     setTotalCount((prev) => prev - 1);
+  }
+
+  async function handleValidateArticle(articleId: string) {
+    const name = articleValidatorInput.trim();
+    if (!name) return;
+    await fetch(`/api/articles/${articleId}/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ validatedBy: name }),
+    });
+    setArticleActioned((prev) => new Set(prev).add(articleId));
+    setArticles((prev) => prev.filter((a) => a.id !== articleId));
+    setValidatingArticle(null);
+    setArticleValidatorInput("");
+  }
+
+  async function handleDeleteArticle(articleId: string) {
+    await fetch(`/api/articles/${articleId}`, { method: "DELETE" });
+    setConfirmingDeleteArticle(null);
+    setArticles((prev) => prev.filter((a) => a.id !== articleId));
   }
 
   return (
@@ -421,6 +461,142 @@ export default function ValidationReviewPage() {
             </div>
           );
         })}
+        {/* Articles pending validation */}
+        <div style={{ marginTop: 48 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--foreground)", marginBottom: 8 }}>
+            Reference articles pending validation
+          </h2>
+          <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.6, maxWidth: 520, marginBottom: 20 }}>
+            Articles that have not yet been validated by a stakeholder.
+          </p>
+
+          {articles.length === 0 ? (
+            <div style={{
+              padding: "36px 24px", textAlign: "center",
+              border: "1px solid var(--card-border)", borderRadius: 12, color: "var(--muted)",
+            }}>
+              <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>All articles validated</p>
+              <p style={{ fontSize: 13 }}>No unvalidated articles remaining.</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {articles.map((a) => (
+                <div
+                  key={a.id}
+                  style={{
+                    padding: "14px 18px",
+                    border: "1px solid var(--card-border)",
+                    borderRadius: 10,
+                    background: "var(--card-bg)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <a
+                      href={`/article/${a.id}`}
+                      style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)", textDecoration: "none" }}
+                      onMouseEnter={(e) => { e.currentTarget.style.textDecoration = "underline"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.textDecoration = "none"; }}
+                    >
+                      {a.title}
+                    </a>
+                    <div style={{ display: "flex", gap: 10, fontSize: 11, color: "var(--muted-light)", marginTop: 3 }}>
+                      {a.department && <span>{a.department}</span>}
+                      <span style={{ opacity: 0.5 }}>·</span>
+                      <span>{new Date(a.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                    {validatingArticle === a.id ? (
+                      <>
+                        <input
+                          autoFocus
+                          className="search-input"
+                          value={articleValidatorInput}
+                          onChange={(e) => setArticleValidatorInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleValidateArticle(a.id);
+                            if (e.key === "Escape") { setValidatingArticle(null); setArticleValidatorInput(""); }
+                          }}
+                          placeholder="Your name"
+                          style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, width: 130 }}
+                        />
+                        <button
+                          onClick={() => handleValidateArticle(a.id)}
+                          disabled={!articleValidatorInput.trim()}
+                          style={{
+                            fontSize: 12, padding: "4px 12px", borderRadius: 6,
+                            border: "1px solid #86efac", background: "#f0fdf4", color: "#15803d",
+                            cursor: articleValidatorInput.trim() ? "pointer" : "not-allowed",
+                            opacity: articleValidatorInput.trim() ? 1 : 0.5,
+                          }}
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          onClick={() => { setValidatingArticle(null); setArticleValidatorInput(""); }}
+                          style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--card-border)", background: "none", color: "var(--muted)", cursor: "pointer" }}
+                        >
+                          ✕
+                        </button>
+                      </>
+                    ) : confirmingDeleteArticle === a.id ? (
+                      <>
+                        <span style={{ fontSize: 12, color: "var(--muted)", marginRight: 4 }}>Delete this article?</span>
+                        <button
+                          onClick={() => handleDeleteArticle(a.id)}
+                          style={{
+                            fontSize: 12, padding: "4px 12px", borderRadius: 6,
+                            border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c",
+                            cursor: "pointer", fontWeight: 500,
+                          }}
+                        >
+                          Yes, delete
+                        </button>
+                        <button
+                          onClick={() => setConfirmingDeleteArticle(null)}
+                          style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--card-border)", background: "none", color: "var(--muted)", cursor: "pointer" }}
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => setValidatingArticle(a.id)}
+                          style={{
+                            fontSize: 12, padding: "4px 12px", borderRadius: 6,
+                            border: "1px solid #86efac", background: "#f0fdf4", color: "#15803d",
+                            cursor: "pointer", fontWeight: 500,
+                          }}
+                        >
+                          Validate
+                        </button>
+                        {["editor", "admin"].includes(me?.role ?? "") && (
+                          <button
+                            onClick={() => setConfirmingDeleteArticle(a.id)}
+                            style={{
+                              fontSize: 12, padding: "4px 12px", borderRadius: 6,
+                              border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   );

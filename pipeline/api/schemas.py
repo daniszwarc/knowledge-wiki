@@ -30,6 +30,13 @@ class HealthResponse(BaseModel):
     database: bool
 
 
+class ArticleIngestResponse(BaseModel):
+    article_id: str
+    title: str
+    word_count: int
+    source_url: Optional[str] = None
+
+
 class WorkflowItem(BaseModel):
     id: str
     name: str

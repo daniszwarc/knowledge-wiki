@@ -3,7 +3,8 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-interface SearchResult {
+interface RuleResult {
+  type: "rule";
   rule_id: string;
   workflow_id: string;
   workflow_name: string;
@@ -16,6 +17,17 @@ interface SearchResult {
   owner_name: string | null;
   rrf_score: number;
 }
+
+interface ArticleResult {
+  type: "article";
+  article_id: string;
+  title: string;
+  department: string | null;
+  snippet: string;
+  rrf_score: number;
+}
+
+type SearchResult = RuleResult | ArticleResult;
 
 
 function SearchResults() {
@@ -115,76 +127,83 @@ function SearchResults() {
         {/* Results */}
         {!loading && searched && results.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {results.map((r, idx) => (
-              <a
-                key={r.rule_id}
-                href={`/workflow/${r.workflow_id}#${r.rule_id}`}
-                className="workflow-card"
-                style={{ display: "block", padding: 18, borderRadius: 10, textDecoration: "none", color: "inherit" }}
-              >
-                {/* Top row */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9, flexWrap: "wrap" }}>
-                  <span style={{
-                    fontSize: 10, fontWeight: 700,
-                    color: "var(--muted-light)",
-                    minWidth: 18, textAlign: "center",
-                  }}>
-                    {idx + 1}
-                  </span>
-
-                  <span style={{
-                    fontSize: 11, fontWeight: 500, padding: "2px 8px",
-                    borderRadius: 99, border: "1px solid var(--card-border)",
-                    background: "var(--sidebar-bg)", color: "var(--muted)",
-                  }}>
-                    {r.workflow_name}
-                  </span>
-
-                  <span style={{
-                    fontSize: 11, fontWeight: 500, padding: "2px 8px",
-                    borderRadius: 99, border: "1px solid var(--card-border)",
-                    color: "var(--muted-light)", background: "none",
-                    textTransform: "capitalize",
-                  }}>
-                    {r.rule_type}
-                  </span>
-
-                  {!r.stakeholder_validated && (
-                    <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, background: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>
-                      Unvalidated
+            {results.map((r, idx) =>
+              r.type === "article" ? (
+                <a
+                  key={r.article_id}
+                  href={`/article/${r.article_id}`}
+                  className="workflow-card"
+                  style={{ display: "block", padding: 18, borderRadius: 10, textDecoration: "none", color: "inherit" }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "var(--muted-light)", minWidth: 18, textAlign: "center" }}>
+                      {idx + 1}
                     </span>
-                  )}
-                </div>
-
-                {/* Summary */}
-                <p style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)", marginBottom: r.detail ? 5 : 8, lineHeight: 1.45 }}>
-                  {r.summary}
-                </p>
-
-                {/* Detail snippet */}
-                {r.detail && (
-                  <p style={{
-                    fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 8,
-                    display: "-webkit-box", WebkitLineClamp: 2,
-                    WebkitBoxOrient: "vertical", overflow: "hidden",
-                  }}>
-                    {r.detail}
+                    <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8" }}>
+                      Article
+                    </span>
+                    {r.department && (
+                      <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, border: "1px solid var(--card-border)", color: "var(--muted-light)", background: "none" }}>
+                        {r.department}
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", marginBottom: 6, lineHeight: 1.45 }}>
+                    {r.title}
                   </p>
-                )}
-
-                {/* Footer */}
-                <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "var(--muted-light)" }}>
-                  {r.owner_name && (
-                    <span>Owner: <span style={{ color: "var(--muted)", fontWeight: 500 }}>{r.owner_name}</span></span>
+                  {r.snippet && (
+                    <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 0, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                      {r.snippet.replace(/[#*`]/g, "")}
+                    </p>
                   )}
-                  <span style={{ opacity: 0.4 }}>·</span>
-                  <span>{r.department}</span>
-                  <span style={{ marginLeft: "auto", opacity: 0.5, fontFamily: "var(--font-geist-mono)", fontSize: 10 }}>
+                  <div style={{ marginTop: 8, fontSize: 10, color: "var(--muted-light)", opacity: 0.5, fontFamily: "var(--font-geist-mono)" }}>
                     score {r.rrf_score.toFixed(4)}
-                  </span>
-                </div>
-              </a>
-            ))}
+                  </div>
+                </a>
+              ) : (
+                <a
+                  key={r.rule_id}
+                  href={`/workflow/${r.workflow_id}#${r.rule_id}`}
+                  className="workflow-card"
+                  style={{ display: "block", padding: 18, borderRadius: 10, textDecoration: "none", color: "inherit" }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "var(--muted-light)", minWidth: 18, textAlign: "center" }}>
+                      {idx + 1}
+                    </span>
+                    <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, border: "1px solid var(--card-border)", background: "var(--sidebar-bg)", color: "var(--muted)" }}>
+                      {r.workflow_name}
+                    </span>
+                    <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, border: "1px solid var(--card-border)", color: "var(--muted-light)", background: "none", textTransform: "capitalize" }}>
+                      {r.rule_type}
+                    </span>
+                    {!r.stakeholder_validated && (
+                      <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, background: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>
+                        Unvalidated
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)", marginBottom: r.detail ? 5 : 8, lineHeight: 1.45 }}>
+                    {r.summary}
+                  </p>
+                  {r.detail && (
+                    <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 8, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                      {r.detail}
+                    </p>
+                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "var(--muted-light)" }}>
+                    {r.owner_name && (
+                      <span>Owner: <span style={{ color: "var(--muted)", fontWeight: 500 }}>{r.owner_name}</span></span>
+                    )}
+                    <span style={{ opacity: 0.4 }}>·</span>
+                    <span>{r.department}</span>
+                    <span style={{ marginLeft: "auto", opacity: 0.5, fontFamily: "var(--font-geist-mono)", fontSize: 10 }}>
+                      score {r.rrf_score.toFixed(4)}
+                    </span>
+                  </div>
+                </a>
+              )
+            )}
           </div>
         )}
 
@@ -195,7 +214,7 @@ function SearchResults() {
             border: "1px solid var(--card-border)", borderRadius: 12,
             color: "var(--muted)",
           }}>
-            <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>No matching rules found</p>
+            <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>No matching rules or articles found</p>
             <p style={{ fontSize: 12 }}>Try different keywords, or <a href="/" style={{ color: "var(--foreground)" }}>browse all workflows</a>.</p>
           </div>
         )}

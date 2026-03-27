@@ -14,22 +14,22 @@ All data, inference, and authentication remain on-premises. No content is sent t
 
 The system comprises four components:
 
-**Next.js wiki** — The primary interface, served on port 3000. Handles user authentication, role-based access control, workflow browsing, semantic search, AI-assisted chat, rule validation, and document upload. Implemented as a Next.js 16 App Router application with TypeScript and Tailwind CSS 4. API routes handle all data access and authentication logic.
+**Next.js wiki** — The primary interface, served on port 3000. Handles user authentication, role-based access control, workflow browsing, semantic search, AI-assisted chat, rule validation, document upload, and article publishing. Implemented as a Next.js 16 App Router application with TypeScript and Tailwind CSS 4. API routes handle all data access and authentication logic.
 
-**FastAPI pipeline** — A separate Python service on port 8000 that accepts documents via HTTP, extracts structured business rules using a LangGraph pipeline backed by a local Ollama model, and writes the results to Postgres. It handles PDF, Word, and plain text input.
+**FastAPI pipeline** — A separate Python service on port 8000 that accepts documents via HTTP and handles two modes of ingestion: rule extraction using a LangGraph pipeline backed by a local Ollama model, and article conversion that publishes full documents as structured wiki articles. It handles PDF, Word, and plain text input.
 
-**Postgres with pgvector** — The shared knowledge base. Stores workflows, rules, validation history, gaps, experts, sessions, users, and a full audit log. The pgvector extension stores 768-dimensional embeddings alongside each rule for semantic search.
+**Postgres with pgvector** — The shared knowledge base. Stores workflows, rules, articles, validation history, gaps, experts, sessions, users, and a full audit log. The pgvector extension stores 768-dimensional embeddings alongside each rule and article for semantic search.
 
-**Ollama** — Local LLM inference server. Two models are required: a chat model for rule extraction and the wiki AI assistant, and an embedding model for vectorising rules at ingest time and queries at search time.
+**Ollama** — Local LLM inference server. Two models are required: a chat model for rule extraction, article conversion, and the wiki AI assistant, and an embedding model for vectorising content at ingest time and queries at search time.
 
 ### Data flow
 
 ```
 Source document (PDF / DOCX / text)
-  -> POST /ingest  (FastAPI pipeline, port 8000)
-  -> LangGraph extraction pipeline  (Ollama chat model)
-  -> Rules written to Postgres with embeddings  (Ollama embed model)
-  -> Wiki displays, searches, and validates rules  (Next.js, port 3000)
+  -> POST /ingest or /ingest/article  (FastAPI pipeline, port 8000)
+  -> LangGraph extraction / LLM conversion  (Ollama chat model)
+  -> Rules or articles written to Postgres with embeddings  (Ollama embed model)
+  -> Wiki displays, searches, and validates content  (Next.js, port 3000)
 ```
 
 ---
@@ -149,14 +149,26 @@ Change the default password immediately after first login via the Admin panel at
 
 ---
 
+## Authentication
+
+**Email + password + TOTP 2FA** — All access requires an email address, password, and a six-digit TOTP code from an authenticator app (Google Authenticator, Authy, or any RFC 6238-compatible app). 2FA is configured on first login and cannot be bypassed. Admins can reset a user's 2FA from the user management panel, which triggers re-setup on the user's next login.
+
+**Session expiry** — Authenticated sessions expire after eight hours. After expiry, the user is redirected to the login page.
+
+**Creating new users** — Only admins can create user accounts. Navigate to `/admin/users`, click "New user", enter the email address and a temporary password, and assign a role. The new user will be prompted to configure 2FA on first login.
+
+**Default admin credentials** — `admin@company.com` / `Admin1234!`. Change the password immediately after first login.
+
+---
+
 ## User Roles
 
-| Role      | Read rules | Validate and flag | Delete rules | Manage users |
-|-----------|:----------:|:-----------------:|:------------:|:------------:|
-| Viewer    | Yes        | No                | No           | No           |
-| Validator | Yes        | Yes               | No           | No           |
-| Editor    | Yes        | Yes               | Yes          | No           |
-| Admin     | Yes        | Yes               | Yes          | Yes          |
+| Role      | Read and search | Validate and flag | Upload documents | Delete rules | Manage users |
+|-----------|:---------------:|:-----------------:|:----------------:|:------------:|:------------:|
+| Viewer    | Yes             | No                | No               | No           | No           |
+| Validator | Yes             | Yes               | Yes              | No           | No           |
+| Editor    | Yes             | Yes               | Yes              | Yes          | No           |
+| Admin     | Yes             | Yes               | Yes              | Yes          | Yes          |
 
 Roles are assigned by an admin at `/admin/users`. Users created by an admin default to the Viewer role.
 
@@ -164,17 +176,25 @@ Roles are assigned by an admin at `/admin/users`. Users created by an admin defa
 
 ## Ingesting Documents
 
-### Via the wiki UI
+The homepage provides a document upload panel with two top-level tabs: **Process document** and **Reference article**. These produce different outputs.
 
-The homepage provides a document upload panel with two tabs:
+### Process document — extract business rules
+
+Use this mode when the goal is to extract structured rules from a source document and add them to a workflow's knowledge base.
 
 **Upload file** — Accepts PDF, DOCX, and TXT files. Provide a workflow name and department before uploading. The file is sent to the pipeline, which extracts rules and writes them to the knowledge base. A progress bar tracks extraction stages.
 
 **Paste text** — For email bodies, meeting notes, or any plain text that does not exist as a file. Additional optional fields accept owner name, owner email, and a source reference string.
 
+### Reference article — publish a full document
+
+Use this mode when the source document should be preserved and published as a searchable wiki article, rather than decomposed into individual rules. The document is converted to structured markdown by the LLM and stored as a single article with its own page, validation status, and download option.
+
+Provide a title, department, and optionally a linked workflow name, then upload a PDF, DOCX, or TXT file.
+
 ### Via the pipeline API directly
 
-Upload a file:
+Extract rules from a file:
 
 ```bash
 curl -X POST http://localhost:8000/ingest \
@@ -185,7 +205,17 @@ curl -X POST http://localhost:8000/ingest \
   -F "owner_email=jane.smith@company.com"
 ```
 
-Ingest plain text:
+Publish a file as an article:
+
+```bash
+curl -X POST http://localhost:8000/ingest/article \
+  -F "file=@document.pdf" \
+  -F "title=Invoice Approval Policy" \
+  -F "department=Finance" \
+  -F "workflow_name=Invoice Approval"
+```
+
+Ingest plain text as rules:
 
 ```bash
 curl -X POST http://localhost:8000/ingest/text \
@@ -200,14 +230,36 @@ curl -X POST http://localhost:8000/ingest/text \
   }'
 ```
 
-Both endpoints return a summary including `rules_extracted` and `rules_written` counts, plus any per-chunk errors.
-
 ### Supported formats
 
 - PDF (parsed via PyMuPDF)
 - Word documents (.docx, parsed via python-docx)
 - Plain text (.txt)
 - Raw text input via the paste tab or the `/ingest/text` endpoint
+
+---
+
+## Articles
+
+Articles are full documents published as searchable wiki pages. Unlike rules — which are individual extracted statements — an article preserves the source document's content, converted to structured markdown, on a dedicated page.
+
+Articles appear in the sidebar navigation under their department and are included in semantic search results alongside rules.
+
+### Uploading an article
+
+From the homepage, select the **Reference article** tab. Provide a title, department, and optionally a workflow name to link the article to a related process. Upload a PDF, DOCX, or TXT file. The pipeline extracts the text, converts it to structured markdown using the chat model, and publishes it as a new article. A progress bar tracks the conversion stage.
+
+### Validating an article
+
+On any article page, users with the Validator, Editor, or Admin role see a "Mark as validated" button at the bottom of the article. Clicking it prompts for the validator's name and records the attestation with a timestamp. Once validated, the article displays a "Validated" badge and the validator's name. Validation status is included in search results.
+
+### Downloading as markdown
+
+Every article page includes a "Download .md" button in the top bar. Clicking it downloads the article's markdown content as a `.md` file named after the article title. This is useful for exporting documentation to external systems or version control.
+
+### Deleting an article
+
+Users with the Validator, Editor, or Admin role can delete an article from the article page. A confirmation step is required. Deletion is recorded in the audit log.
 
 ---
 
@@ -240,9 +292,9 @@ The Experts directory lists subject matter experts and process owners by departm
 
 ## Search
 
-The search bar at the top of the homepage performs hybrid search combining full-text keyword matching and semantic vector similarity. Results are ranked using Reciprocal Rank Fusion (RRF), which merges both result lists into a single relevance-ordered output.
+The search bar at the top of the homepage performs hybrid search combining full-text keyword matching and semantic vector similarity. Results are ranked using Reciprocal Rank Fusion (RRF), which merges both result lists into a single relevance-ordered output. Both rules and articles appear in search results.
 
-Type a query and press Enter. Each result shows the matching rule, its workflow, department, rule type, owner, and validation status.
+Type a query and press Enter. Each result shows the matching content, its workflow or article, department, and validation status.
 
 The "Help me find a process" chat panel on the homepage accepts natural language questions and returns a streamed response. Use it to navigate to relevant workflows when the exact workflow name is unknown.
 
@@ -276,7 +328,7 @@ Llama 3.2 running locally is less reliable than cloud-hosted models at maintaini
 
 **Prompt injection protection** — The chat endpoint applies input filtering to detect common prompt injection patterns before forwarding requests to the local model. The system prompt frames the model's knowledge as a fixed, closed set of facts.
 
-**Audit log** — All INSERT, UPDATE, and DELETE operations on the `rules` and `workflows` tables are recorded automatically via Postgres triggers. Each entry captures the table name, record ID, action, timestamp, and both the previous and new values as JSONB.
+**Audit log** — All INSERT, UPDATE, and DELETE operations on the `rules`, `workflows`, and `articles` tables are recorded automatically. Each entry captures the table name, record ID, action, timestamp, and both the previous and new values as JSONB.
 
 **Data residency** — No content, embeddings, or queries leave the server. All LLM inference runs locally via Ollama. All data is stored in a local Postgres instance.
 
@@ -286,10 +338,10 @@ Llama 3.2 running locally is less reliable than cloud-hosted models at maintaini
 
 The system is designed to support SOX documentation and evidence requirements:
 
-- **Audit trail** — The `audit_log` table records every modification to rules and workflows with the previous and new state, providing a tamper-evident history of the knowledge base.
-- **Validation records** — When a stakeholder validates a rule, their name and the timestamp are recorded. This creates a named attestation for each documented control.
+- **Audit trail** — The `audit_log` table records every modification to rules, workflows, and articles with the previous and new state, providing a tamper-evident history of the knowledge base.
+- **Validation records** — When a stakeholder validates a rule or article, their name and the timestamp are recorded. This creates a named attestation for each documented control.
 - **Gaps reporting** — The Flagged gaps view documents what is known to be missing or outdated. This is evidence that the organisation is actively tracking its documentation gaps.
-- **Role separation** — Viewers cannot modify any data. Validators can confirm or flag rules but cannot delete them. Only Editors and Admins can delete rules. Admins alone can manage user accounts and roles.
+- **Role separation** — Viewers cannot modify any data. Validators can confirm or flag rules and articles but cannot delete rules or manage workflows. Only Editors and Admins can delete rules and manage workflows. Admins alone can manage user accounts and roles.
 
 These properties do not constitute legal compliance certification. Consult your compliance team to confirm that the system's controls satisfy your specific audit requirements.
 
@@ -320,12 +372,72 @@ This re-embeds all rules in the database using the configured `OLLAMA_EMBED_MODE
 
 ## Roadmap
 
-- Docker containerisation for all four components
 - Email notifications when rules are flagged or validation is requested
 - Gap resolution workflow in the UI
 - Rule editing UI
 - Mobile-responsive layout
 - Support for additional document formats (Excel, PowerPoint)
+
+---
+
+## Docker Deployment
+
+### Quick start
+
+```bash
+cp .env.docker.example .env
+# Edit .env with your values
+chmod +x scripts/docker-setup.sh
+./scripts/docker-setup.sh
+```
+
+### Manual steps
+
+```bash
+docker compose build
+docker compose up -d postgres
+docker compose run --rm wiki npx tsx scripts/migrate.ts
+docker compose run --rm wiki npx tsx scripts/seed-admin.ts
+docker compose up -d
+docker compose exec ollama ollama pull llama3.2:latest
+docker compose exec ollama ollama pull nomic-embed-text
+```
+
+### Local development with Docker
+
+Use `docker-compose.dev.yml` for hot-reload development:
+
+```bash
+cp .env.docker.example .env
+# Edit .env with your values
+docker compose -f docker-compose.dev.yml up
+```
+
+The wiki runs `npm run dev` with source mounted for hot reload. The pipeline runs `uvicorn --reload` with source mounted.
+
+### Deploying to a VPS with Traefik
+
+1. Copy `.env.docker.example` to `.env` on the server
+2. Set `WIKI_DOMAIN` to your domain (e.g. `wiki.yourdomain.com`)
+3. Ensure Traefik is running and configured with a TLS certificate resolver named `mytlschallenge`
+4. Run `./scripts/docker-setup.sh`
+5. The wiki will be available at `https://wiki.yourdomain.com`
+
+### Updating
+
+```bash
+git pull
+docker compose build
+docker compose up -d
+```
+
+### Viewing logs
+
+```bash
+docker compose logs wiki
+docker compose logs pipeline
+docker compose logs ollama
+```
 
 ---
 

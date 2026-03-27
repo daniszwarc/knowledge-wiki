@@ -3,7 +3,6 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 
 interface Workflow {
   id: string;
@@ -20,6 +19,18 @@ interface GroupedWorkflows {
   [department: string]: Workflow[];
 }
 
+interface NavArticle {
+  id: string;
+  title: string;
+  stakeholder_validated: boolean;
+}
+
+interface NavDept {
+  department: string;
+  workflows: Workflow[];
+  articles: NavArticle[];
+}
+
 const DEPT_ICONS: Record<string, string> = {
   Finance: "₣",
   Operations: "⚙",
@@ -33,18 +44,22 @@ function completenessLevel(score: number): "high" | "medium" | "low" {
 }
 
 export default function HomePage() {
-  const router = useRouter();
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [grouped, setGrouped] = useState<GroupedWorkflows>({});
   const [departments, setDepartments] = useState<string[]>([]);
-  const [searchQ, setSearchQ] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [chatResponse, setChatResponse] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [openDepts, setOpenDepts] = useState<Record<string, boolean>>({});
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
+  // Nav data (includes articles per dept)
+  const [navData, setNavData] = useState<NavDept[]>([]);
+
+  // Workflow delete state
+  const [confirmingDeleteWorkflow, setConfirmingDeleteWorkflow] = useState<string | null>(null);
+
   // Upload state
+  const [mainTab, setMainTab] = useState<"process" | "article">("process");
   const [uploadTab, setUploadTab] = useState<"file" | "text">("file");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadWorkflow, setUploadWorkflow] = useState("");
@@ -72,10 +87,30 @@ export default function HomePage() {
   const [pasteResult, setPasteResult] = useState<{ rules_extracted: number; rules_written: number } | null>(null);
   const [pasteError, setPasteError] = useState("");
 
+  // Article upload state
+  const [articleFile, setArticleFile] = useState<File | null>(null);
+  const [articleTitle, setArticleTitle] = useState("");
+  const [articleDept, setArticleDept] = useState("");
+  const [articleWorkflow, setArticleWorkflow] = useState("");
+  const [articleLoading, setArticleLoading] = useState(false);
+  const [articleProgress, setArticleProgress] = useState(0);
+  const [articleStage, setArticleStage] = useState("");
+  const [articleResult, setArticleResult] = useState<{ article_id: string; title: string } | null>(null);
+  const [articleError, setArticleError] = useState("");
+  const [articleDragging, setArticleDragging] = useState(false);
+  const articleFileInputRef = useRef<HTMLInputElement>(null);
+  const articleTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.ok ? r.json() : null)
       .then((data) => { if (data) setMe(data); });
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/nav")
+      .then((r) => r.json())
+      .then((data: NavDept[]) => { if (Array.isArray(data)) setNavData(data); });
   }, []);
 
   useEffect(() => {
@@ -87,20 +122,14 @@ export default function HomePage() {
           if (!g[w.department]) g[w.department] = [];
           g[w.department].push(w);
         }
-        setWorkflows(data);
         setGrouped(g);
         const depts = Object.keys(g).sort();
         setDepartments(depts);
         const open: Record<string, boolean> = {};
-        depts.forEach((d) => (open[d] = true));
+        depts.forEach((d) => (open[d] = false));
         setOpenDepts(open);
       });
   }, []);
-
-  function handleSearch(e: { preventDefault(): void }) {
-    e.preventDefault();
-    if (searchQ.trim()) router.push(`/search?q=${encodeURIComponent(searchQ.trim())}`);
-  }
 
   async function handleChat(e: { preventDefault(): void }) {
     e.preventDefault();
@@ -137,13 +166,12 @@ export default function HomePage() {
           if (!g[w.department]) g[w.department] = [];
           g[w.department].push(w);
         }
-        setWorkflows(data);
         setGrouped(g);
         const depts = Object.keys(g).sort();
         setDepartments(depts);
         setOpenDepts((prev) => {
           const next = { ...prev };
-          depts.forEach((d) => { if (!(d in next)) next[d] = true; });
+          depts.forEach((d) => { if (!(d in next)) next[d] = false; });
           return next;
         });
       });
@@ -238,6 +266,74 @@ export default function HomePage() {
     }
   }
 
+  async function handleDeleteWorkflow(workflowId: string) {
+    await fetch(`/api/workflows/${workflowId}`, { method: "DELETE" });
+    setConfirmingDeleteWorkflow(null);
+    setGrouped((prev) => {
+      const next: GroupedWorkflows = {};
+      for (const dept of Object.keys(prev)) {
+        next[dept] = prev[dept].filter((w) => w.id !== workflowId);
+      }
+      return next;
+    });
+  }
+
+  function refreshNav() {
+    fetch("/api/nav")
+      .then((r) => r.json())
+      .then((data: NavDept[]) => { if (Array.isArray(data)) setNavData(data); });
+  }
+
+  async function handleArticleUpload(e: { preventDefault(): void }) {
+    e.preventDefault();
+    if (!articleFile || !articleTitle.trim() || !articleDept.trim() || articleLoading) return;
+    setArticleLoading(true);
+    setArticleResult(null);
+    setArticleError("");
+    setArticleProgress(0);
+
+    const stages: [number, number, string][] = [
+      [400,  20, "Converting document to article…"],
+      [2000, 45, "Converting document to article…"],
+      [6000, 70, "Almost done…"],
+    ];
+    articleTimersRef.current.forEach(clearTimeout);
+    articleTimersRef.current = stages.map(([delay, pct, label]) =>
+      setTimeout(() => { setArticleProgress(pct); setArticleStage(label); }, delay)
+    );
+
+    try {
+      const fd = new FormData();
+      fd.append("file", articleFile);
+      fd.append("title", articleTitle.trim());
+      fd.append("department", articleDept.trim());
+      if (articleWorkflow.trim()) fd.append("workflow_name", articleWorkflow.trim());
+      const res = await fetch("http://localhost:8000/ingest/article", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail ?? "Upload failed");
+      }
+      const json = await res.json();
+      articleTimersRef.current.forEach(clearTimeout);
+      setArticleProgress(100);
+      setArticleStage("Done");
+      setArticleResult({ article_id: json.article_id, title: json.title });
+      setArticleFile(null);
+      setArticleTitle("");
+      setArticleDept("");
+      setArticleWorkflow("");
+      if (articleFileInputRef.current) articleFileInputRef.current.value = "";
+      refreshNav();
+    } catch (err) {
+      articleTimersRef.current.forEach(clearTimeout);
+      setArticleProgress(0);
+      setArticleStage("");
+      setArticleError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setArticleLoading(false);
+    }
+  }
+
   function scrollToSection(dept: string) {
     sectionRefs.current[dept]?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -261,69 +357,107 @@ export default function HomePage() {
 
         {/* Department nav */}
         <nav style={{ flex: 1, paddingTop: 8 }}>
-          {departments.map((dept) => (
-            <div key={dept}>
-              <button
-                onClick={() => toggleDept(dept)}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "7px 16px",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  color: "var(--muted)",
-                }}
-              >
-                <span style={{ fontSize: 13, opacity: 0.7, width: 16, textAlign: "center", flexShrink: 0 }}>{DEPT_ICONS[dept] ?? "◈"}</span>
-                <span>{dept}</span>
-                <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 400, color: "var(--muted-light)" }}>
-                  {grouped[dept]?.length ?? 0}
-                </span>
-                <ChevronIcon rotated={openDepts[dept]} />
-              </button>
+          {navData.map((deptData) => {
+            const dept = deptData.department;
+            const deptArticles = deptData.articles;
+            return (
+              <div key={dept}>
+                <button
+                  onClick={() => toggleDept(dept)}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "7px 16px",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    color: "var(--muted)",
+                  }}
+                >
+                  <span style={{ fontSize: 13, opacity: 0.7, width: 16, textAlign: "center", flexShrink: 0 }}>{DEPT_ICONS[dept] ?? "◈"}</span>
+                  <span>{dept}</span>
+                  <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 400, color: "var(--muted-light)" }}>
+                    {grouped[dept]?.length ?? 0}
+                  </span>
+                  <ChevronIcon rotated={openDepts[dept]} />
+                </button>
 
-              {openDepts[dept] && (
-                <div style={{ marginLeft: 40, paddingLeft: 8, borderLeft: "1px solid var(--card-border)", marginBottom: 4 }}>
-                  {grouped[dept]?.map((w) => (
-                    <button
-                      key={w.id}
-                      onClick={() => scrollToSection(dept)}
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        textAlign: "left",
-                        padding: "6px 8px",
-                        fontSize: 12,
-                        color: "var(--muted)",
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        borderRadius: 6,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = "var(--card-hover-bg)"; e.currentTarget.style.color = "var(--foreground)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--muted)"; }}
-                    >
-                      {w.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+                {openDepts[dept] && (
+                  <div style={{ marginLeft: 40, paddingLeft: 8, borderLeft: "1px solid var(--card-border)", marginBottom: 4 }}>
+                    {grouped[dept]?.map((w) => (
+                      <button
+                        key={w.id}
+                        onClick={() => scrollToSection(dept)}
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "6px 8px",
+                          fontSize: 12,
+                          color: "var(--muted)",
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          borderRadius: 6,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--card-hover-bg)"; e.currentTarget.style.color = "var(--foreground)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--muted)"; }}
+                      >
+                        {w.name}
+                      </button>
+                    ))}
+                    {deptArticles.length > 0 && (
+                      <>
+                        <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted-light)", padding: "6px 8px 2px", opacity: 0.7 }}>
+                          Articles
+                        </div>
+                        {deptArticles.map((a) => (
+                          <a
+                            key={a.id}
+                            href={`/article/${a.id}`}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              padding: "6px 8px",
+                              fontSize: 12,
+                              color: "var(--muted)",
+                              textDecoration: "none",
+                              borderRadius: 6,
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--card-hover-bg)"; e.currentTarget.style.color = "var(--foreground)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = ""; e.currentTarget.style.color = "var(--muted)"; }}
+                          >
+                            <span style={{
+                              width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+                              background: a.stakeholder_validated ? "#4ade80" : "#f59e0b",
+                              opacity: a.stakeholder_validated ? 0.8 : 0.5,
+                            }} />
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {a.title}
+                            </span>
+                          </a>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         {/* Footer */}
-        <div style={{ padding: "10px 14px 14px", borderTop: "1px solid var(--sidebar-border)" }}>
+        <div style={{ padding: "10px 14px 80px", borderTop: "1px solid var(--sidebar-border)" }}>
           <a href="/experts" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
             Subject matter experts
           </a>
@@ -358,40 +492,6 @@ export default function HomePage() {
 
       {/* ── Main ─────────────────────────────────────────────────── */}
       <main style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
-
-        {/* Sticky top bar */}
-        <div style={{
-          position: "sticky", top: 0, zIndex: 10,
-          background: "var(--background)",
-          borderBottom: "1px solid var(--sidebar-border)",
-          padding: "12px 32px",
-          display: "flex", alignItems: "center", gap: 16,
-        }}>
-          <form onSubmit={handleSearch} style={{ flex: 1, maxWidth: 520 }}>
-            <div style={{ position: "relative" }}>
-              <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted-light)", pointerEvents: "none" }}>
-                <SearchIcon />
-              </span>
-              <input
-                id="search-input"
-                className="search-input"
-                value={searchQ}
-                onChange={(e) => setSearchQ(e.target.value)}
-                placeholder="Search rules, workflows, policies…"
-                style={{
-                  width: "100%",
-                  paddingLeft: 36,
-                  paddingRight: 16,
-                  paddingTop: 9,
-                  paddingBottom: 9,
-                  fontSize: 14,
-                  borderRadius: 8,
-                }}
-              />
-            </div>
-          </form>
-          <span style={{ fontSize: 12, color: "var(--muted-light)" }}>{workflows.length} workflows</span>
-        </div>
 
         {/* Content */}
         <div style={{ padding: "32px 32px 64px", maxWidth: 960, width: "100%" }}>
@@ -479,202 +579,337 @@ export default function HomePage() {
             )}
           </div>
 
-          {/* Document upload */}
-          <div style={{
-            marginBottom: 40,
-            padding: 20,
-            borderRadius: 12,
-            border: "1px solid var(--card-border)",
-            background: "var(--sidebar-bg)",
-          }}>
-            {/* Tab switcher */}
-            <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
-              {(["file", "text"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setUploadTab(tab)}
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 500,
-                    padding: "5px 12px",
-                    borderRadius: 6,
-                    border: "1px solid var(--card-border)",
-                    cursor: "pointer",
-                    background: uploadTab === tab ? "var(--foreground)" : "transparent",
-                    color: uploadTab === tab ? "var(--background)" : "var(--muted)",
-                  }}
-                >
-                  {tab === "file" ? "Upload file" : "Paste text"}
-                </button>
-              ))}
-            </div>
+          {/* Document upload — visible to validator / editor / admin only */}
+          {me && ["validator", "editor", "admin"].includes(me.role) && (
+            <div style={{
+              marginBottom: 40,
+              padding: 20,
+              borderRadius: 12,
+              border: "1px solid var(--card-border)",
+              background: "var(--sidebar-bg)",
+            }}>
+              {/* Main tab switcher */}
+              <div style={{ display: "flex", gap: 4, marginBottom: 20 }}>
+                {(["process", "article"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setMainTab(tab)}
+                    style={{
+                      flex: 1,
+                      fontSize: 12,
+                      fontWeight: 500,
+                      padding: "7px 14px",
+                      borderRadius: 8,
+                      border: `1px solid ${mainTab === tab ? "var(--foreground)" : "var(--card-border)"}`,
+                      cursor: "pointer",
+                      background: mainTab === tab ? "var(--foreground)" : "transparent",
+                      color: mainTab === tab ? "var(--background)" : "var(--muted)",
+                      textAlign: "center",
+                    }}
+                  >
+                    {tab === "process" ? "Upload process document" : "Add reference article"}
+                  </button>
+                ))}
+              </div>
 
-            {uploadTab === "file" ? (
-              <form onSubmit={handleUpload}>
-                {/* Drop zone */}
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  onDragOver={(e) => { e.preventDefault(); setUploadDragging(true); }}
-                  onDragLeave={() => setUploadDragging(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setUploadDragging(false);
-                    const f = e.dataTransfer.files[0];
-                    if (f) setUploadFile(f);
-                  }}
-                  style={{
-                    border: `1px dashed ${uploadDragging ? "var(--foreground)" : "var(--card-border)"}`,
-                    borderRadius: 8,
-                    padding: "18px 14px",
-                    textAlign: "center",
-                    cursor: "pointer",
-                    marginBottom: 10,
-                    background: uploadDragging ? "var(--card-hover-bg)" : "transparent",
-                    transition: "background 0.15s, border-color 0.15s",
-                  }}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pdf,.docx,.txt"
-                    style={{ display: "none" }}
-                    onChange={(e) => { const f = e.target.files?.[0]; if (f) setUploadFile(f); }}
-                  />
-                  <span style={{ fontSize: 13, color: uploadFile ? "var(--foreground)" : "var(--muted-light)" }}>
-                    {uploadFile ? uploadFile.name : "Drop a PDF, DOCX, or TXT file here, or click to browse"}
-                  </span>
-                </div>
-                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                  <input
-                    className="search-input"
-                    value={uploadWorkflow}
-                    onChange={(e) => setUploadWorkflow(e.target.value)}
-                    placeholder="Workflow name"
-                    style={{ flex: 2, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                  />
-                  <input
-                    className="search-input"
-                    value={uploadDept}
-                    onChange={(e) => setUploadDept(e.target.value)}
-                    placeholder="Department"
-                    style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                  />
-                  <button
-                    type="submit"
-                    disabled={uploadLoading || !uploadFile || !uploadWorkflow.trim() || !uploadDept.trim()}
-                    style={{
-                      padding: "9px 18px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "none",
-                      background: "var(--foreground)", color: "var(--background)",
-                      cursor: uploadLoading || !uploadFile || !uploadWorkflow.trim() || !uploadDept.trim() ? "not-allowed" : "pointer",
-                      opacity: uploadLoading || !uploadFile || !uploadWorkflow.trim() || !uploadDept.trim() ? 0.45 : 1,
-                      flexShrink: 0, whiteSpace: "nowrap",
-                    }}
-                  >
-                    {uploadLoading ? "Extracting rules…" : "Upload"}
-                  </button>
-                </div>
-                {uploadLoading && (
-                  <div style={{ marginTop: 10 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                      <span style={{ fontSize: 12, color: "var(--muted)" }}>{uploadStage}</span>
-                      <span style={{ fontSize: 12, color: "var(--muted-light)" }}>{uploadProgress}%</span>
+              {mainTab === "process" ? (
+                <>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", marginBottom: 4 }}>
+                    Extract business rules from a document or email
+                  </p>
+                  <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 16 }}>
+                    Upload a PDF, Word document, or paste text from an email. The system will automatically extract business rules and add them to the knowledge base.
+                  </p>
+
+                  {/* Process sub-toggle: file vs paste */}
+                  <div style={{ display: "flex", gap: 4, marginBottom: 14 }}>
+                    {(["file", "text"] as const).map((sub) => (
+                      <button
+                        key={sub}
+                        type="button"
+                        onClick={() => setUploadTab(sub)}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 500,
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                          border: "1px solid var(--card-border)",
+                          cursor: "pointer",
+                          background: uploadTab === sub ? "var(--card-hover-bg)" : "transparent",
+                          color: uploadTab === sub ? "var(--foreground)" : "var(--muted)",
+                        }}
+                      >
+                        {sub === "file" ? "Upload file" : "Paste text"}
+                      </button>
+                    ))}
+                  </div>
+
+                  {uploadTab === "file" ? (
+                    <form onSubmit={handleUpload}>
+                      <div
+                        onClick={() => fileInputRef.current?.click()}
+                        onDragOver={(e) => { e.preventDefault(); setUploadDragging(true); }}
+                        onDragLeave={() => setUploadDragging(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setUploadDragging(false);
+                          const f = e.dataTransfer.files[0];
+                          if (f) setUploadFile(f);
+                        }}
+                        style={{
+                          border: `1px dashed ${uploadDragging ? "var(--foreground)" : "var(--card-border)"}`,
+                          borderRadius: 8,
+                          padding: "18px 14px",
+                          textAlign: "center",
+                          cursor: "pointer",
+                          marginBottom: 10,
+                          background: uploadDragging ? "var(--card-hover-bg)" : "transparent",
+                          transition: "background 0.15s, border-color 0.15s",
+                        }}
+                      >
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept=".pdf,.docx,.txt"
+                          style={{ display: "none" }}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) setUploadFile(f); }}
+                        />
+                        <span style={{ fontSize: 13, color: uploadFile ? "var(--foreground)" : "var(--muted-light)" }}>
+                          {uploadFile ? uploadFile.name : "Drop a PDF, DOCX, or TXT file here, or click to browse"}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                        <input
+                          className="search-input"
+                          value={uploadWorkflow}
+                          onChange={(e) => setUploadWorkflow(e.target.value)}
+                          placeholder="Workflow name"
+                          style={{ flex: 2, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                        />
+                        <input
+                          className="search-input"
+                          value={uploadDept}
+                          onChange={(e) => setUploadDept(e.target.value)}
+                          placeholder="Department"
+                          style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                        />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                        <button
+                          type="submit"
+                          disabled={uploadLoading || !uploadFile || !uploadWorkflow.trim() || !uploadDept.trim()}
+                          style={{
+                            padding: "9px 18px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "none",
+                            background: "var(--foreground)", color: "var(--background)",
+                            cursor: uploadLoading || !uploadFile || !uploadWorkflow.trim() || !uploadDept.trim() ? "not-allowed" : "pointer",
+                            opacity: uploadLoading || !uploadFile || !uploadWorkflow.trim() || !uploadDept.trim() ? 0.45 : 1,
+                          }}
+                        >
+                          {uploadLoading ? "Extracting rules…" : "Extract rules"}
+                        </button>
+                      </div>
+                      {uploadLoading && (
+                        <div style={{ marginTop: 4, marginBottom: 6 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                            <span style={{ fontSize: 12, color: "var(--muted)" }}>{uploadStage}</span>
+                            <span style={{ fontSize: 12, color: "var(--muted-light)" }}>{uploadProgress}%</span>
+                          </div>
+                          <div style={{ height: 4, borderRadius: 99, background: "var(--card-border)", overflow: "hidden" }}>
+                            <div style={{ height: "100%", borderRadius: 99, background: "var(--foreground)", width: `${uploadProgress}%`, transition: "width 0.6s ease" }} />
+                          </div>
+                        </div>
+                      )}
+                      {uploadResult && (
+                        <div style={{ fontSize: 13, color: "#15803d", paddingTop: 4 }}>
+                          Done — {uploadResult.rules_extracted} rule{uploadResult.rules_extracted !== 1 ? "s" : ""} extracted, {uploadResult.rules_written} written to the wiki.
+                        </div>
+                      )}
+                      {uploadError && (
+                        <div style={{ fontSize: 13, color: "#b91c1c", paddingTop: 4 }}>{uploadError}</div>
+                      )}
+                    </form>
+                  ) : (
+                    <form onSubmit={handlePaste}>
+                      <textarea
+                        className="search-input"
+                        value={pasteText}
+                        onChange={(e) => setPasteText(e.target.value)}
+                        placeholder="Paste email content, meeting notes, or any text..."
+                        rows={6}
+                        style={{ width: "100%", padding: "9px 14px", fontSize: 13, borderRadius: 8, resize: "vertical", marginBottom: 10, fontFamily: "inherit", boxSizing: "border-box" }}
+                      />
+                      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                        <input
+                          className="search-input"
+                          value={pasteWorkflow}
+                          onChange={(e) => setPasteWorkflow(e.target.value)}
+                          placeholder="Workflow name"
+                          style={{ flex: 2, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                        />
+                        <input
+                          className="search-input"
+                          value={pasteDept}
+                          onChange={(e) => setPasteDept(e.target.value)}
+                          placeholder="Department"
+                          style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                        />
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                        <input
+                          className="search-input"
+                          value={pasteOwnerName}
+                          onChange={(e) => setPasteOwnerName(e.target.value)}
+                          placeholder="Owner name (optional)"
+                          style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                        />
+                        <input
+                          className="search-input"
+                          value={pasteOwnerEmail}
+                          onChange={(e) => setPasteOwnerEmail(e.target.value)}
+                          placeholder="Owner email (optional)"
+                          style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                        />
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                        <input
+                          className="search-input"
+                          value={pasteSource}
+                          onChange={(e) => setPasteSource(e.target.value)}
+                          placeholder="e.g. Email from Linda Chen, March 2026 (optional)"
+                          style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                        />
+                        <button
+                          type="submit"
+                          disabled={pasteLoading || !pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim()}
+                          style={{
+                            padding: "9px 18px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "none",
+                            background: "var(--foreground)", color: "var(--background)",
+                            cursor: pasteLoading || !pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim() ? "not-allowed" : "pointer",
+                            opacity: pasteLoading || !pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim() ? 0.45 : 1,
+                            flexShrink: 0, whiteSpace: "nowrap",
+                          }}
+                        >
+                          {pasteLoading ? "Extracting rules…" : "Extract rules"}
+                        </button>
+                      </div>
+                      {pasteResult && (
+                        <div style={{ fontSize: 13, color: "#15803d", paddingTop: 4 }}>
+                          Done — {pasteResult.rules_extracted} rule{pasteResult.rules_extracted !== 1 ? "s" : ""} extracted, {pasteResult.rules_written} written to the wiki.
+                        </div>
+                      )}
+                      {pasteError && (
+                        <div style={{ fontSize: 13, color: "#b91c1c", paddingTop: 4 }}>{pasteError}</div>
+                      )}
+                    </form>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", marginBottom: 4 }}>
+                    Publish a reference document to the wiki
+                  </p>
+                  <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 16 }}>
+                    Upload a technical guide, architecture document, or process overview. It will be stored as a searchable article and linked to a workflow if specified.
+                  </p>
+                  <form onSubmit={handleArticleUpload}>
+                    <div
+                      onClick={() => articleFileInputRef.current?.click()}
+                      onDragOver={(e) => { e.preventDefault(); setArticleDragging(true); }}
+                      onDragLeave={() => setArticleDragging(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setArticleDragging(false);
+                        const f = e.dataTransfer.files[0];
+                        if (f) setArticleFile(f);
+                      }}
+                      style={{
+                        border: `1px dashed ${articleDragging ? "var(--foreground)" : "var(--card-border)"}`,
+                        borderRadius: 8,
+                        padding: "18px 14px",
+                        textAlign: "center",
+                        cursor: "pointer",
+                        marginBottom: 10,
+                        background: articleDragging ? "var(--card-hover-bg)" : "transparent",
+                        transition: "background 0.15s, border-color 0.15s",
+                      }}
+                    >
+                      <input
+                        ref={articleFileInputRef}
+                        type="file"
+                        accept=".pdf,.docx,.txt,.md"
+                        style={{ display: "none" }}
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) setArticleFile(f); }}
+                      />
+                      <span style={{ fontSize: 13, color: articleFile ? "var(--foreground)" : "var(--muted-light)" }}>
+                        {articleFile ? articleFile.name : "Drop a PDF, DOCX, TXT, or MD file here, or click to browse"}
+                      </span>
                     </div>
-                    <div style={{ height: 4, borderRadius: 99, background: "var(--card-border)", overflow: "hidden" }}>
-                      <div style={{
-                        height: "100%", borderRadius: 99, background: "var(--foreground)",
-                        width: `${uploadProgress}%`,
-                        transition: "width 0.6s ease",
-                      }} />
+                    <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                      <input
+                        className="search-input"
+                        value={articleTitle}
+                        onChange={(e) => setArticleTitle(e.target.value)}
+                        placeholder="Article title"
+                        style={{ flex: 2, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                      />
+                      <input
+                        className="search-input"
+                        value={articleDept}
+                        onChange={(e) => setArticleDept(e.target.value)}
+                        placeholder="Department"
+                        style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                      />
                     </div>
-                  </div>
-                )}
-                {uploadResult && (
-                  <div style={{ fontSize: 13, color: "#15803d", paddingTop: 4 }}>
-                    Done — {uploadResult.rules_extracted} rule{uploadResult.rules_extracted !== 1 ? "s" : ""} extracted,{" "}
-                    {uploadResult.rules_written} written to the wiki.
-                  </div>
-                )}
-                {uploadError && (
-                  <div style={{ fontSize: 13, color: "#b91c1c", paddingTop: 4 }}>{uploadError}</div>
-                )}
-              </form>
-            ) : (
-              <form onSubmit={handlePaste}>
-                <textarea
-                  className="search-input"
-                  value={pasteText}
-                  onChange={(e) => setPasteText(e.target.value)}
-                  placeholder="Paste email content, meeting notes, or any text..."
-                  rows={6}
-                  style={{ width: "100%", padding: "9px 14px", fontSize: 13, borderRadius: 8, resize: "vertical", marginBottom: 10, fontFamily: "inherit", boxSizing: "border-box" }}
-                />
-                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                  <input
-                    className="search-input"
-                    value={pasteWorkflow}
-                    onChange={(e) => setPasteWorkflow(e.target.value)}
-                    placeholder="Workflow name"
-                    style={{ flex: 2, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                  />
-                  <input
-                    className="search-input"
-                    value={pasteDept}
-                    onChange={(e) => setPasteDept(e.target.value)}
-                    placeholder="Department"
-                    style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                  />
-                </div>
-                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                  <input
-                    className="search-input"
-                    value={pasteOwnerName}
-                    onChange={(e) => setPasteOwnerName(e.target.value)}
-                    placeholder="Owner name (optional)"
-                    style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                  />
-                  <input
-                    className="search-input"
-                    value={pasteOwnerEmail}
-                    onChange={(e) => setPasteOwnerEmail(e.target.value)}
-                    placeholder="Owner email (optional)"
-                    style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                  />
-                </div>
-                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                  <input
-                    className="search-input"
-                    value={pasteSource}
-                    onChange={(e) => setPasteSource(e.target.value)}
-                    placeholder="e.g. Email from Linda Chen, March 2026 (optional)"
-                    style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                  />
-                  <button
-                    type="submit"
-                    disabled={pasteLoading || !pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim()}
-                    style={{
-                      padding: "9px 18px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "none",
-                      background: "var(--foreground)", color: "var(--background)",
-                      cursor: pasteLoading || !pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim() ? "not-allowed" : "pointer",
-                      opacity: pasteLoading || !pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim() ? 0.45 : 1,
-                      flexShrink: 0, whiteSpace: "nowrap",
-                    }}
-                  >
-                    {pasteLoading ? "Extracting rules…" : "Submit"}
-                  </button>
-                </div>
-                {pasteResult && (
-                  <div style={{ fontSize: 13, color: "#15803d", paddingTop: 4 }}>
-                    Done — {pasteResult.rules_extracted} rule{pasteResult.rules_extracted !== 1 ? "s" : ""} extracted,{" "}
-                    {pasteResult.rules_written} written to the wiki.
-                  </div>
-                )}
-                {pasteError && (
-                  <div style={{ fontSize: 13, color: "#b91c1c", paddingTop: 4 }}>{pasteError}</div>
-                )}
-              </form>
-            )}
-          </div>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                      <input
+                        className="search-input"
+                        value={articleWorkflow}
+                        onChange={(e) => setArticleWorkflow(e.target.value)}
+                        placeholder="Related workflow (optional)"
+                        style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                      />
+                      <button
+                        type="submit"
+                        disabled={articleLoading || !articleFile || !articleTitle.trim() || !articleDept.trim()}
+                        style={{
+                          padding: "9px 18px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "none",
+                          background: "var(--foreground)", color: "var(--background)",
+                          cursor: articleLoading || !articleFile || !articleTitle.trim() || !articleDept.trim() ? "not-allowed" : "pointer",
+                          opacity: articleLoading || !articleFile || !articleTitle.trim() || !articleDept.trim() ? 0.45 : 1,
+                          flexShrink: 0, whiteSpace: "nowrap",
+                        }}
+                      >
+                        {articleLoading ? "Publishing…" : "Publish article"}
+                      </button>
+                    </div>
+                    {articleLoading && (
+                      <div style={{ marginTop: 4, marginBottom: 6 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                          <span style={{ fontSize: 12, color: "var(--muted)" }}>{articleStage}</span>
+                          <span style={{ fontSize: 12, color: "var(--muted-light)" }}>{articleProgress}%</span>
+                        </div>
+                        <div style={{ height: 4, borderRadius: 99, background: "var(--card-border)", overflow: "hidden" }}>
+                          <div style={{ height: "100%", borderRadius: 99, background: "var(--foreground)", width: `${articleProgress}%`, transition: "width 0.6s ease" }} />
+                        </div>
+                      </div>
+                    )}
+                    {articleResult && (
+                      <div style={{ fontSize: 13, color: "#15803d", paddingTop: 4 }}>
+                        Published —{" "}
+                        <a href={`/article/${articleResult.article_id}`} style={{ color: "#15803d", fontWeight: 500 }}>
+                          {articleResult.title}
+                        </a>
+                      </div>
+                    )}
+                    {articleError && (
+                      <div style={{ fontSize: 13, color: "#b91c1c", paddingTop: 4 }}>{articleError}</div>
+                    )}
+                  </form>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Workflow sections by department */}
           {departments.map((dept) => (
@@ -707,69 +942,107 @@ export default function HomePage() {
                   const validatedCount = parseInt(w.validated_count, 10);
                   const gapCount = parseInt(w.gap_count, 10);
 
+                  const isConfirming = confirmingDeleteWorkflow === w.id;
+                  const canDelete = me && ["editor", "admin"].includes(me.role) && ruleCount === 0;
+
                   return (
-                    <a
-                      key={w.id}
-                      href={`/workflow/${w.id}`}
-                      className="workflow-card"
-                      style={{
-                        display: "block",
-                        padding: 20,
-                        borderRadius: 12,
-                        textDecoration: "none",
-                        color: "inherit",
-                      }}
-                    >
-                      {/* Top row: dept badge + completeness */}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                        <span style={{
-                          fontSize: 11,
-                          fontWeight: 500,
-                          padding: "2px 8px",
-                          borderRadius: 99,
-                          border: "1px solid var(--card-border)",
+                    <div key={w.id} style={{ position: "relative" }}>
+                      <a
+                        href={`/workflow/${w.id}`}
+                        className="workflow-card"
+                        style={{
+                          display: "block",
+                          padding: 20,
+                          borderRadius: 12,
+                          textDecoration: "none",
+                          color: "inherit",
+                        }}
+                      >
+                        {/* Top row: dept badge + completeness */}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                          <span style={{
+                            fontSize: 11,
+                            fontWeight: 500,
+                            padding: "2px 8px",
+                            borderRadius: 99,
+                            border: "1px solid var(--card-border)",
+                            color: "var(--muted)",
+                            background: "var(--sidebar-bg)",
+                          }}>
+                            {dept}
+                          </span>
+                          <span className={`badge-${level}`} style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99 }}>
+                            {w.completeness_score}% complete
+                          </span>
+                        </div>
+
+                        {/* Question headline */}
+                        <h3 style={{ fontSize: 14, fontWeight: 500, color: "var(--foreground)", marginBottom: 6, lineHeight: 1.4 }}>
+                          How does {w.name.toLowerCase()} work?
+                        </h3>
+
+                        {/* Description */}
+                        <p style={{
+                          fontSize: 12,
                           color: "var(--muted)",
-                          background: "var(--sidebar-bg)",
+                          lineHeight: 1.6,
+                          marginBottom: 16,
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
                         }}>
-                          {dept}
-                        </span>
-                        <span className={`badge-${level}`} style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99 }}>
-                          {w.completeness_score}% complete
-                        </span>
-                      </div>
+                          {w.description}
+                        </p>
 
-                      {/* Question headline */}
-                      <h3 style={{ fontSize: 14, fontWeight: 500, color: "var(--foreground)", marginBottom: 6, lineHeight: 1.4 }}>
-                        How does {w.name.toLowerCase()} work?
-                      </h3>
+                        {/* Stats */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "var(--muted-light)" }}>
+                          <span>{ruleCount} rule{ruleCount !== 1 ? "s" : ""}</span>
+                          <span>·</span>
+                          <span>{validatedCount}/{ruleCount} validated</span>
+                          {gapCount > 0 && (
+                            <>
+                              <span>·</span>
+                              <span style={{ color: "#d97706" }}>{gapCount} gap{gapCount !== 1 ? "s" : ""}</span>
+                            </>
+                          )}
+                        </div>
+                      </a>
 
-                      {/* Description */}
-                      <p style={{
-                        fontSize: 12,
-                        color: "var(--muted)",
-                        lineHeight: 1.6,
-                        marginBottom: 16,
-                        display: "-webkit-box",
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: "vertical",
-                        overflow: "hidden",
-                      }}>
-                        {w.description}
-                      </p>
-
-                      {/* Stats */}
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "var(--muted-light)" }}>
-                        <span>{ruleCount} rule{ruleCount !== 1 ? "s" : ""}</span>
-                        <span>·</span>
-                        <span>{validatedCount}/{ruleCount} validated</span>
-                        {gapCount > 0 && (
-                          <>
-                            <span>·</span>
-                            <span style={{ color: "#d97706" }}>{gapCount} gap{gapCount !== 1 ? "s" : ""}</span>
-                          </>
-                        )}
-                      </div>
-                    </a>
+                      {/* Delete button — only for empty workflows */}
+                      {canDelete && (
+                        <div
+                          style={{ position: "absolute", top: 12, right: 12 }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {isConfirming ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 5, background: "var(--card-bg)", borderRadius: 8, border: "1px solid var(--card-border)", padding: "5px 8px" }}>
+                              <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>Delete?</span>
+                              <button
+                                onClick={() => handleDeleteWorkflow(w.id)}
+                                style={{ fontSize: 11, padding: "2px 8px", borderRadius: 5, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", cursor: "pointer", fontWeight: 500, whiteSpace: "nowrap" }}
+                              >
+                                Yes
+                              </button>
+                              <button
+                                onClick={() => setConfirmingDeleteWorkflow(null)}
+                                style={{ fontSize: 11, padding: "2px 6px", borderRadius: 5, border: "1px solid var(--card-border)", background: "none", color: "var(--muted)", cursor: "pointer" }}
+                              >
+                                No
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmingDeleteWorkflow(w.id)}
+                              title="Delete workflow"
+                              style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", cursor: "pointer", opacity: 0.7 }}
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -778,15 +1051,6 @@ export default function HomePage() {
         </div>
       </main>
     </div>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" style={{ display: "block" }}>
-      <circle cx={11} cy={11} r={8} />
-      <path d="m21 21-4.35-4.35" />
-    </svg>
   );
 }
 
