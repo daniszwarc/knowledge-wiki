@@ -29,6 +29,39 @@ function isInjectionAttempt(msg: string): boolean {
   return false;
 }
 
+const DISCOVERY_PROMPT =
+  "You are a process discovery assistant for an internal knowledge base. " +
+  "Based on the user's question and the relevant content found below, guide them to the right place.\n\n" +
+  "Tell them:\n" +
+  "1. Which workflow or article is most relevant to their question and why (one sentence)\n" +
+  "2. A direct answer if the information is available in the search results\n" +
+  "3. Where to find more detail (link to the workflow or article)\n\n" +
+  "If nothing relevant is found, say: We do not have documented information about that process yet. " +
+  "Consider uploading relevant documents or flagging it as a gap.\n\n" +
+  "Never invent information. Only use what is in the provided search results.";
+
+function buildDiscoveryContext(results: {
+  type: string;
+  workflow_id?: string; workflow_name?: string; department?: string;
+  summary?: string; detail?: string;
+  article_id?: string; title?: string; snippet?: string;
+}[]): string {
+  if (!results.length) return "No relevant content found.";
+  const lines: string[] = [];
+  for (const r of results) {
+    if (r.type === "rule") {
+      lines.push(`[RULE] Workflow: "${r.workflow_name}" | Link: /workflow/${r.workflow_id}`);
+      lines.push(`  ${r.summary}`);
+      if (r.detail) lines.push(`  Detail: ${r.detail}`);
+    } else if (r.type === "article") {
+      lines.push(`[ARTICLE] Title: "${r.title}" | Link: /article/${r.article_id}`);
+      lines.push(`  ${r.snippet}`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
 const WORKFLOW_PROMPT_TEMPLATE =
   "The following are the only facts you know. You have no other knowledge. " +
   "You cannot answer questions about topics not in this list because you " +
@@ -53,9 +86,10 @@ const WORKFLOW_PROMPT_TEMPLATE =
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { messages, workflowId } = body as {
+    const { messages, workflowId, searchResults } = body as {
       messages: { role: "user" | "assistant"; content: string }[];
       workflowId?: string;
+      searchResults?: { type: string; [key: string]: unknown }[];
     };
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -73,10 +107,16 @@ export async function POST(req: NextRequest) {
     }
 
     if (!workflowId) {
-      return new Response(
-        "Please navigate to a specific workflow to ask questions.",
-        { headers: { "Content-Type": "text/plain; charset=utf-8" } }
-      );
+      const context = buildDiscoveryContext((searchResults ?? []) as Parameters<typeof buildDiscoveryContext>[0]);
+      const systemPrompt = `${DISCOVERY_PROMPT}\n\n=== SEARCH RESULTS ===\n${context}\n=== END OF SEARCH RESULTS ===`;
+      const stream = await chat(messages, systemPrompt);
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Transfer-Encoding": "chunked",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
     }
 
     const rules = await query<{

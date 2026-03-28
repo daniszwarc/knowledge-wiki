@@ -5,6 +5,8 @@ const PUBLIC_PATHS = [
   "/login/verify",
   "/login/setup-2fa",
   "/api/auth/",
+  "/api/embed",
+  "/api/articles/embed",
   "/_next/",
   "/favicon.ico",
 ];

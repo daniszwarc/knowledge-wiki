@@ -37,6 +37,12 @@ interface GroupedWorkflows {
   [dept: string]: AllWorkflow[];
 }
 
+interface NavArticle {
+  id: string;
+  title: string;
+  stakeholder_validated: boolean;
+}
+
 const DEPT_ICONS: Record<string, string> = {
   Finance: "₣",
   Operations: "⚙",
@@ -75,8 +81,9 @@ export default function WorkflowPage() {
   const id = params.id as string;
 
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
-  const [allWorkflows, setAllWorkflows] = useState<AllWorkflow[]>([]);
+  const [, setAllWorkflows] = useState<AllWorkflow[]>([]);
   const [grouped, setGrouped] = useState<GroupedWorkflows>({});
+  const [navData, setNavData] = useState<{ department: string; workflows?: AllWorkflow[]; articles: NavArticle[] }[]>([]);
   const [openDepts, setOpenDepts] = useState<Record<string, boolean>>({});
   const [me, setMe] = useState<{ id: string; email: string; role: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,7 +113,8 @@ export default function WorkflowPage() {
     Promise.all([
       fetch(`/api/workflows/${id}`).then((r) => r.json()),
       fetch("/api/workflows").then((r) => r.json()),
-    ]).then(([wf, all]: [Workflow, AllWorkflow[]]) => {
+      fetch("/api/nav").then((r) => r.json()),
+    ]).then(([wf, all, nav]: [Workflow, AllWorkflow[], { department: string; articles: NavArticle[] }[]]) => {
       setWorkflow(wf);
       const g: GroupedWorkflows = {};
       for (const w of all) {
@@ -115,9 +123,12 @@ export default function WorkflowPage() {
       }
       setAllWorkflows(all);
       setGrouped(g);
-      const depts = Object.keys(g).sort();
+      if (Array.isArray(nav)) setNavData(nav);
+      const allDepts = Array.isArray(nav)
+        ? nav.map((d) => d.department)
+        : Object.keys(g).sort();
       const open: Record<string, boolean> = {};
-      depts.forEach((d) => (open[d] = d === wf.department));
+      allDepts.forEach((d) => (open[d] = true));
       setOpenDepts(open);
       setLoading(false);
     });
@@ -260,7 +271,6 @@ export default function WorkflowPage() {
     );
   }
 
-  const depts = Object.keys(grouped).sort();
   const level = completenessLevel(workflow.completeness_score);
 
   return (
@@ -281,7 +291,10 @@ export default function WorkflowPage() {
 
         {/* Department nav */}
         <nav style={{ flex: 1, paddingTop: 6 }}>
-          {depts.map((dept) => (
+          {navData.map((deptData) => {
+            const dept = deptData.department;
+            const articles = deptData.articles ?? [];
+            return (
             <div key={dept}>
               <button
                 onClick={() => setOpenDepts((p) => ({ ...p, [dept]: !p[dept] }))}
@@ -323,10 +336,39 @@ export default function WorkflowPage() {
                       </a>
                     );
                   })}
+                  {articles.length > 0 && (
+                    <>
+                      <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted-light)", padding: "6px 7px 2px", opacity: 0.7 }}>
+                        Articles
+                      </div>
+                      {articles.map((a) => (
+                        <a
+                          key={a.id}
+                          href={`/article/${a.id}`}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 6,
+                            padding: "5px 7px", fontSize: 12,
+                            color: "var(--muted)", textDecoration: "none", borderRadius: 5,
+                            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                          }}
+                        >
+                          <span style={{
+                            width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+                            background: a.stakeholder_validated ? "#4ade80" : "#f59e0b",
+                            opacity: a.stakeholder_validated ? 0.8 : 0.5,
+                          }} />
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {a.title}
+                          </span>
+                        </a>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </nav>
 
         <div style={{ padding: "10px 14px 80px", borderTop: "1px solid var(--sidebar-border)" }}>

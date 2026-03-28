@@ -1,10 +1,11 @@
 from typing import Optional
 import json
 import os
+import threading
 from typing import TypedDict
 
+import httpx
 from dotenv import load_dotenv
-from langchain_ollama import ChatOllama
 from langgraph.graph import END, START, StateGraph
 
 from db.client import call_embed, create_workflow_if_missing, insert_rule
@@ -52,9 +53,13 @@ def extract_from_chunk(state: PipelineState) -> PipelineState:
     )
 
     try:
-        llm = ChatOllama(base_url=OLLAMA_BASE_URL, model=OLLAMA_MODEL, temperature=0)
-        response = llm.invoke(prompt)
-        content = response.content.strip()
+        resp = httpx.post(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
+            timeout=25.0,
+        )
+        resp.raise_for_status()
+        content = resp.json().get("response", "").strip()
 
         # Strip markdown code fences if present
         if content.startswith("```"):
@@ -106,7 +111,7 @@ def write_to_db(state: PipelineState) -> PipelineState:
                 state["source_url"],
             )
             embed_text = f"{rule.summary}. {rule.detail}"
-            call_embed(rule_id, embed_text)
+            threading.Thread(target=call_embed, args=(rule_id, embed_text), daemon=True).start()
         except Exception as e:
             errors.append(f"DB write error for rule '{rule.summary[:40]}': {e}")
 

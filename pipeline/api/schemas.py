@@ -22,19 +22,16 @@ class IngestResponse(BaseModel):
     errors: list[str]
     rules: list[ExtractedRule]
     source_url: Optional[str] = None
+    document_type: str = "rules"
+    article_id: Optional[str] = None
+    article_title: Optional[str] = None
+    workflow_id: Optional[str] = None
 
 
 class HealthResponse(BaseModel):
     status: str
     ollama: bool
     database: bool
-
-
-class ArticleIngestResponse(BaseModel):
-    article_id: str
-    title: str
-    word_count: int
-    source_url: Optional[str] = None
 
 
 class WorkflowItem(BaseModel):

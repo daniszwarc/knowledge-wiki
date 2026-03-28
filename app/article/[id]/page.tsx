@@ -204,44 +204,98 @@ export default function ArticlePage() {
         </div>
 
         {/* Prose */}
-        <div className="article-prose">
+        <div>
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
-              h1: ({ children }) => <h1 className="ap-h1">{children}</h1>,
-              h2: ({ children }) => <h2 className="ap-h2">{children}</h2>,
-              h3: ({ children }) => <h3 className="ap-h3">{children}</h3>,
-              h4: ({ children }) => <h4 className="ap-h4">{children}</h4>,
-              p:  ({ children }) => <p  className="ap-p">{children}</p>,
-              ul: ({ children }) => <ul className="ap-ul">{children}</ul>,
-              ol: ({ children }) => <ol className="ap-ol">{children}</ol>,
-              li: ({ children }) => <li className="ap-li">{children}</li>,
-              blockquote: ({ children }) => <blockquote className="ap-blockquote">{children}</blockquote>,
-              hr: () => <hr className="ap-hr" />,
-              strong: ({ children }) => <strong className="ap-strong">{children}</strong>,
-              em: ({ children }) => <em className="ap-em">{children}</em>,
+              h1: ({ children }) => (
+                <h1 style={{ fontSize: 24, fontWeight: 700, marginTop: 40, marginBottom: 12, color: "var(--foreground)", lineHeight: 1.3 }}>{children}</h1>
+              ),
+              h2: ({ children }) => (
+                <h2 style={{ fontSize: 20, fontWeight: 600, marginTop: 32, marginBottom: 10, paddingBottom: 8, borderBottom: "1px solid var(--card-border)", color: "var(--foreground)", lineHeight: 1.35 }}>{children}</h2>
+              ),
+              h3: ({ children }) => (
+                <h3 style={{ fontSize: 16, fontWeight: 600, marginTop: 24, marginBottom: 8, color: "var(--foreground)", lineHeight: 1.4 }}>{children}</h3>
+              ),
+              h4: ({ children }) => (
+                <h4 style={{ fontSize: 14, fontWeight: 600, marginTop: 20, marginBottom: 6, color: "var(--foreground)" }}>{children}</h4>
+              ),
+              p: ({ children }) => (
+                <p style={{ lineHeight: 1.8, marginBottom: 16, color: "var(--foreground)", fontSize: 15 }}>{children}</p>
+              ),
+              ul: ({ children }) => (
+                <ul style={{ marginLeft: 24, marginBottom: 16, lineHeight: 1.8, listStyleType: "disc" }}>{children}</ul>
+              ),
+              ol: ({ children }) => (
+                <ol style={{ marginLeft: 24, marginBottom: 16, lineHeight: 1.8, listStyleType: "decimal" }}>{children}</ol>
+              ),
+              li: ({ children }) => (
+                <li style={{ marginBottom: 6, color: "var(--foreground)", fontSize: 15 }}>{children}</li>
+              ),
+              blockquote: ({ children }) => (
+                <blockquote style={{ borderLeft: "3px solid var(--card-border)", paddingLeft: 16, marginLeft: 0, marginBottom: 16, color: "var(--muted)", fontStyle: "italic" }}>{children}</blockquote>
+              ),
+              hr: () => (
+                <hr style={{ border: "none", borderTop: "1px solid var(--card-border)", margin: "24px 0" }} />
+              ),
+              strong: ({ children }) => (
+                <strong style={{ fontWeight: 600 }}>{children}</strong>
+              ),
+              em: ({ children }) => (
+                <em style={{ fontStyle: "italic" }}>{children}</em>
+              ),
               a: ({ href, children }) => (
                 <a
                   href={href}
-                  className="ap-a"
+                  style={{ color: "var(--accent, #2563eb)", textDecoration: "underline", textUnderlineOffset: 2 }}
                   target={href?.startsWith("http") ? "_blank" : undefined}
                   rel={href?.startsWith("http") ? "noopener noreferrer" : undefined}
                 >
                   {children}
                 </a>
               ),
+              img: ({ src, alt }) => (
+                <span style={{ display: "block", margin: "16px 0" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={src}
+                    alt={alt ?? ""}
+                    style={{
+                      maxWidth: "100%",
+                      border: "1px solid var(--card-border)",
+                      borderRadius: 8,
+                      display: "block",
+                      cursor: "pointer",
+                    }}
+                    onClick={() => src && window.open(src, "_blank")}
+                  />
+                  {alt && (
+                    <span style={{ display: "block", marginTop: 6, fontSize: 12, color: "var(--muted)", textAlign: "center" }}>{alt}</span>
+                  )}
+                </span>
+              ),
               table: ({ children }) => (
                 <div style={{ overflowX: "auto", marginBottom: 20 }}>
-                  <table className="ap-table">{children}</table>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>{children}</table>
                 </div>
               ),
               thead: ({ children }) => <thead>{children}</thead>,
               tbody: ({ children }) => <tbody>{children}</tbody>,
-              tr:   ({ children }) => <tr   className="ap-tr">{children}</tr>,
-              th:   ({ children }) => <th   className="ap-th">{children}</th>,
-              td:   ({ children }) => <td   className="ap-td">{children}</td>,
-              code: ({ children }) => <code className="ap-code">{children}</code>,
-              pre:  ({ children }) => <pre  className="ap-pre">{children}</pre>,
+              tr: ({ children }) => <tr>{children}</tr>,
+              th: ({ children }) => (
+                <th style={{ background: "var(--sidebar-bg)", padding: "8px 12px", textAlign: "left", fontWeight: 600, fontSize: 13, borderBottom: "1px solid var(--card-border)" }}>{children}</th>
+              ),
+              td: ({ children }) => (
+                <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--card-border)", fontSize: 14, color: "var(--foreground)" }}>{children}</td>
+              ),
+              code: ({ children, className }) => {
+                const isBlock = className?.startsWith("language-");
+                if (isBlock) return <code style={{ fontFamily: "var(--font-geist-mono, monospace)", fontSize: 13 }}>{children}</code>;
+                return <code style={{ background: "#f3f4f6", padding: "2px 6px", borderRadius: 4, fontSize: 13, fontFamily: "var(--font-geist-mono, monospace)" }}>{children}</code>;
+              },
+              pre: ({ children }) => (
+                <pre style={{ background: "#f3f4f6", padding: 16, borderRadius: 8, overflowX: "auto", marginBottom: 16, fontSize: 13, fontFamily: "var(--font-geist-mono, monospace)", lineHeight: 1.6 }}>{children}</pre>
+              ),
             }}
           >
             {prepareContent(article.content)}

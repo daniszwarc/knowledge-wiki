@@ -31,6 +31,73 @@ interface NavDept {
   articles: NavArticle[];
 }
 
+function DeptCombobox({
+  value,
+  onChange,
+  departments,
+  style,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  departments: string[];
+  style?: React.CSSProperties;
+}) {
+  const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const filtered = departments.filter((d) =>
+    d.toLowerCase().includes(value.toLowerCase())
+  );
+
+  useEffect(() => {
+    function onMouseDown(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, []);
+
+  return (
+    <div ref={containerRef} style={{ position: "relative", ...style }}>
+      <input
+        className="search-input"
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        placeholder="Department"
+        autoComplete="off"
+        style={{ width: "100%", padding: "9px 14px", fontSize: 13, borderRadius: 8, boxSizing: "border-box" }}
+      />
+      {open && filtered.length > 0 && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 200,
+          background: "var(--background)", border: "1px solid var(--card-border)",
+          borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.18)", overflow: "hidden",
+        }}>
+          {filtered.map((d) => (
+            <div
+              key={d}
+              onMouseDown={(e) => { e.preventDefault(); onChange(d); setOpen(false); }}
+              onMouseEnter={() => setHovered(d)}
+              onMouseLeave={() => setHovered(null)}
+              style={{
+                padding: "8px 14px", fontSize: 13, cursor: "pointer",
+                background: hovered === d ? "var(--muted-bg, rgba(0,0,0,0.06))" : d === value ? "var(--muted-bg, rgba(0,0,0,0.04))" : "transparent",
+                fontWeight: d === value ? 500 : 400,
+              }}
+            >
+              {d}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const DEPT_ICONS: Record<string, string> = {
   Finance: "₣",
   Operations: "⚙",
@@ -59,15 +126,22 @@ export default function HomePage() {
   const [confirmingDeleteWorkflow, setConfirmingDeleteWorkflow] = useState<string | null>(null);
 
   // Upload state
-  const [mainTab, setMainTab] = useState<"process" | "article">("process");
   const [uploadTab, setUploadTab] = useState<"file" | "text">("file");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadWorkflow, setUploadWorkflow] = useState("");
   const [uploadDept, setUploadDept] = useState("");
+  const [uploadOwnerName, setUploadOwnerName] = useState("");
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStage, setUploadStage] = useState("");
-  const [uploadResult, setUploadResult] = useState<{ rules_extracted: number; rules_written: number } | null>(null);
+  const [uploadResult, setUploadResult] = useState<{
+    document_type: "rules" | "article" | "both";
+    rules_extracted?: number;
+    workflow_name?: string;
+    workflow_id?: string;
+    article_id?: string;
+    article_title?: string;
+  } | null>(null);
   const [uploadError, setUploadError] = useState("");
   const [uploadDragging, setUploadDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -81,25 +155,19 @@ export default function HomePage() {
   const [pasteWorkflow, setPasteWorkflow] = useState("");
   const [pasteDept, setPasteDept] = useState("");
   const [pasteOwnerName, setPasteOwnerName] = useState("");
-  const [pasteOwnerEmail, setPasteOwnerEmail] = useState("");
-  const [pasteSource, setPasteSource] = useState("");
+  const [pasteProgress, setPasteProgress] = useState(0);
+  const [pasteStage, setPasteStage] = useState("");
+  const pasteTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [pasteLoading, setPasteLoading] = useState(false);
-  const [pasteResult, setPasteResult] = useState<{ rules_extracted: number; rules_written: number } | null>(null);
+  const [pasteResult, setPasteResult] = useState<{
+    document_type: "rules" | "article" | "both";
+    rules_extracted?: number;
+    workflow_name?: string;
+    workflow_id?: string;
+    article_id?: string;
+    article_title?: string;
+  } | null>(null);
   const [pasteError, setPasteError] = useState("");
-
-  // Article upload state
-  const [articleFile, setArticleFile] = useState<File | null>(null);
-  const [articleTitle, setArticleTitle] = useState("");
-  const [articleDept, setArticleDept] = useState("");
-  const [articleWorkflow, setArticleWorkflow] = useState("");
-  const [articleLoading, setArticleLoading] = useState(false);
-  const [articleProgress, setArticleProgress] = useState(0);
-  const [articleStage, setArticleStage] = useState("");
-  const [articleResult, setArticleResult] = useState<{ article_id: string; title: string } | null>(null);
-  const [articleError, setArticleError] = useState("");
-  const [articleDragging, setArticleDragging] = useState(false);
-  const articleFileInputRef = useRef<HTMLInputElement>(null);
-  const articleTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -114,21 +182,21 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/workflows")
-      .then((r) => r.json())
-      .then((data: Workflow[]) => {
-        const g: GroupedWorkflows = {};
-        for (const w of data) {
-          if (!g[w.department]) g[w.department] = [];
-          g[w.department].push(w);
-        }
-        setGrouped(g);
-        const depts = Object.keys(g).sort();
-        setDepartments(depts);
-        const open: Record<string, boolean> = {};
-        depts.forEach((d) => (open[d] = false));
-        setOpenDepts(open);
-      });
+    Promise.all([
+      fetch("/api/workflows").then((r) => r.json()),
+      fetch("/api/departments").then((r) => r.json()),
+    ]).then(([workflows, allDepts]: [Workflow[], string[]]) => {
+      const g: GroupedWorkflows = {};
+      for (const w of workflows) {
+        if (!g[w.department]) g[w.department] = [];
+        g[w.department].push(w);
+      }
+      setGrouped(g);
+      const open: Record<string, boolean> = {};
+      Object.keys(g).forEach((d) => (open[d] = false));
+      setOpenDepts(open);
+      setDepartments(Array.isArray(allDepts) ? allDepts : Object.keys(g).sort());
+    });
   }, []);
 
   async function handleChat(e: { preventDefault(): void }) {
@@ -139,10 +207,12 @@ export default function HomePage() {
     setChatResponse("");
     setChatLoading(true);
     try {
+      const searchRes = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+      const searchResults = searchRes.ok ? await searchRes.json() : [];
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [{ role: "user", content: q }] }),
+        body: JSON.stringify({ messages: [{ role: "user", content: q }], searchResults }),
       });
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
@@ -158,23 +228,23 @@ export default function HomePage() {
   }
 
   function refreshWorkflows() {
-    fetch("/api/workflows")
-      .then((r) => r.json())
-      .then((data: Workflow[]) => {
-        const g: GroupedWorkflows = {};
-        for (const w of data) {
-          if (!g[w.department]) g[w.department] = [];
-          g[w.department].push(w);
-        }
-        setGrouped(g);
-        const depts = Object.keys(g).sort();
-        setDepartments(depts);
-        setOpenDepts((prev) => {
-          const next = { ...prev };
-          depts.forEach((d) => { if (!(d in next)) next[d] = false; });
-          return next;
-        });
+    Promise.all([
+      fetch("/api/workflows").then((r) => r.json()),
+      fetch("/api/departments").then((r) => r.json()),
+    ]).then(([data, allDepts]: [Workflow[], string[]]) => {
+      const g: GroupedWorkflows = {};
+      for (const w of data) {
+        if (!g[w.department]) g[w.department] = [];
+        g[w.department].push(w);
+      }
+      setGrouped(g);
+      setDepartments(Array.isArray(allDepts) ? allDepts : Object.keys(g).sort());
+      setOpenDepts((prev) => {
+        const next = { ...prev };
+        Object.keys(g).forEach((d) => { if (!(d in next)) next[d] = false; });
+        return next;
       });
+    });
   }
 
   async function handleUpload(e: { preventDefault(): void }) {
@@ -185,12 +255,15 @@ export default function HomePage() {
     setUploadError("");
     setUploadProgress(0);
 
-    // Simulated progress stages: upload → extracting → writing
     const stages: [number, number, string][] = [
-      [400,  15, "Uploading file…"],
-      [1200, 35, "Extracting rules with AI…"],
-      [5000, 60, "Extracting rules with AI…"],
-      [12000, 80, "Almost done…"],
+      [500,   8,  "Uploading file…"],
+      [2000,  18, "Classifying document…"],
+      [8000,  32, "Processing…"],
+      [25000, 48, "Processing…"],
+      [55000, 62, "Still working — this can take a minute…"],
+      [100000, 74, "Almost there…"],
+      [160000, 84, "Finalising…"],
+      [220000, 92, "Just a moment…"],
     ];
     uploadTimersRef.current.forEach(clearTimeout);
     uploadTimersRef.current = stages.map(([delay, pct, label]) =>
@@ -202,6 +275,7 @@ export default function HomePage() {
       fd.append("file", uploadFile);
       fd.append("workflow_name", uploadWorkflow.trim());
       fd.append("department", uploadDept.trim());
+      if (uploadOwnerName.trim()) fd.append("owner_name", uploadOwnerName.trim());
       const res = await fetch("http://localhost:8000/ingest", { method: "POST", body: fd });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -211,12 +285,23 @@ export default function HomePage() {
       uploadTimersRef.current.forEach(clearTimeout);
       setUploadProgress(100);
       setUploadStage("Done");
-      setUploadResult({ rules_extracted: json.rules_extracted, rules_written: json.rules_written });
+      setUploadResult({
+        document_type: json.document_type,
+        rules_extracted: json.rules_extracted,
+        workflow_name: uploadWorkflow.trim(),
+        workflow_id: json.workflow_id,
+        article_id: json.article_id,
+        article_title: json.article_title,
+      });
+      const usedDept = uploadDept.trim();
       setUploadFile(null);
       setUploadWorkflow("");
       setUploadDept("");
+      setUploadOwnerName("");
       if (fileInputRef.current) fileInputRef.current.value = "";
+      setDepartments((prev) => prev.includes(usedDept) ? prev : [...prev, usedDept].sort());
       refreshWorkflows();
+      refreshNav();
     } catch (err) {
       uploadTimersRef.current.forEach(clearTimeout);
       setUploadProgress(0);
@@ -233,6 +318,23 @@ export default function HomePage() {
     setPasteLoading(true);
     setPasteResult(null);
     setPasteError("");
+    setPasteProgress(0);
+
+    const pasteStages: [number, number, string][] = [
+      [500,   8,  "Submitting…"],
+      [2000,  18, "Classifying document…"],
+      [8000,  32, "Processing…"],
+      [25000, 48, "Processing…"],
+      [55000, 62, "Still working — this can take a minute…"],
+      [100000, 74, "Almost there…"],
+      [160000, 84, "Finalizing…"],
+      [220000, 92, "Just a moment…"],
+    ];
+    pasteTimersRef.current.forEach(clearTimeout);
+    pasteTimersRef.current = pasteStages.map(([delay, pct, label]) =>
+      setTimeout(() => { setPasteProgress(pct); setPasteStage(label); }, delay)
+    );
+
     try {
       const res = await fetch("http://localhost:8000/ingest/text", {
         method: "POST",
@@ -242,8 +344,6 @@ export default function HomePage() {
           workflow_name: pasteWorkflow.trim(),
           department: pasteDept.trim(),
           ...(pasteOwnerName.trim() && { owner_name: pasteOwnerName.trim() }),
-          ...(pasteOwnerEmail.trim() && { owner_email: pasteOwnerEmail.trim() }),
-          ...(pasteSource.trim() && { source: pasteSource.trim() }),
         }),
       });
       if (!res.ok) {
@@ -251,15 +351,29 @@ export default function HomePage() {
         throw new Error(err.detail ?? "Submission failed");
       }
       const json = await res.json();
-      setPasteResult({ rules_extracted: json.rules_extracted, rules_written: json.rules_written });
+      pasteTimersRef.current.forEach(clearTimeout);
+      setPasteProgress(100);
+      setPasteStage("Done");
+      setPasteResult({
+        document_type: json.document_type,
+        rules_extracted: json.rules_extracted,
+        workflow_name: pasteWorkflow.trim(),
+        workflow_id: json.workflow_id,
+        article_id: json.article_id,
+        article_title: json.article_title,
+      });
+      const usedDept = pasteDept.trim();
       setPasteText("");
       setPasteWorkflow("");
       setPasteDept("");
       setPasteOwnerName("");
-      setPasteOwnerEmail("");
-      setPasteSource("");
+      setDepartments((prev) => prev.includes(usedDept) ? prev : [...prev, usedDept].sort());
       refreshWorkflows();
+      refreshNav();
     } catch (err) {
+      pasteTimersRef.current.forEach(clearTimeout);
+      setPasteProgress(0);
+      setPasteStage("");
       setPasteError(err instanceof Error ? err.message : "Submission failed");
     } finally {
       setPasteLoading(false);
@@ -282,56 +396,6 @@ export default function HomePage() {
     fetch("/api/nav")
       .then((r) => r.json())
       .then((data: NavDept[]) => { if (Array.isArray(data)) setNavData(data); });
-  }
-
-  async function handleArticleUpload(e: { preventDefault(): void }) {
-    e.preventDefault();
-    if (!articleFile || !articleTitle.trim() || !articleDept.trim() || articleLoading) return;
-    setArticleLoading(true);
-    setArticleResult(null);
-    setArticleError("");
-    setArticleProgress(0);
-
-    const stages: [number, number, string][] = [
-      [400,  20, "Converting document to article…"],
-      [2000, 45, "Converting document to article…"],
-      [6000, 70, "Almost done…"],
-    ];
-    articleTimersRef.current.forEach(clearTimeout);
-    articleTimersRef.current = stages.map(([delay, pct, label]) =>
-      setTimeout(() => { setArticleProgress(pct); setArticleStage(label); }, delay)
-    );
-
-    try {
-      const fd = new FormData();
-      fd.append("file", articleFile);
-      fd.append("title", articleTitle.trim());
-      fd.append("department", articleDept.trim());
-      if (articleWorkflow.trim()) fd.append("workflow_name", articleWorkflow.trim());
-      const res = await fetch("http://localhost:8000/ingest/article", { method: "POST", body: fd });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }));
-        throw new Error(err.detail ?? "Upload failed");
-      }
-      const json = await res.json();
-      articleTimersRef.current.forEach(clearTimeout);
-      setArticleProgress(100);
-      setArticleStage("Done");
-      setArticleResult({ article_id: json.article_id, title: json.title });
-      setArticleFile(null);
-      setArticleTitle("");
-      setArticleDept("");
-      setArticleWorkflow("");
-      if (articleFileInputRef.current) articleFileInputRef.current.value = "";
-      refreshNav();
-    } catch (err) {
-      articleTimersRef.current.forEach(clearTimeout);
-      setArticleProgress(0);
-      setArticleStage("");
-      setArticleError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setArticleLoading(false);
-    }
   }
 
   function scrollToSection(dept: string) {
@@ -567,13 +631,28 @@ export default function HomePage() {
                     Clear
                   </button>
                 </div>
-                <div style={{
-                  fontSize: 13,
-                  color: "var(--foreground)",
-                  lineHeight: 1.7,
-                  whiteSpace: "pre-wrap",
-                }}>
-                  {chatResponse}
+                <div style={{ fontSize: 13, color: "var(--foreground)", lineHeight: 1.7 }}>
+                  {chatResponse.split("\n").map((line, i) => {
+                    // Render inline markdown links: [text](url)
+                    const parts = line.split(/(\[[^\]]+\]\([^)]+\))/g);
+                    return (
+                      <p key={i} style={{ margin: "0 0 6px" }}>
+                        {parts.map((part, j) => {
+                          const m = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+                          if (m) {
+                            return (
+                              <a key={j} href={m[2]}
+                                style={{ color: "var(--foreground)", fontWeight: 500, textDecoration: "underline", textUnderlineOffset: 2 }}
+                              >
+                                {m[1]}
+                              </a>
+                            );
+                          }
+                          return part;
+                        })}
+                      </p>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -588,325 +667,271 @@ export default function HomePage() {
               border: "1px solid var(--card-border)",
               background: "var(--sidebar-bg)",
             }}>
-              {/* Main tab switcher */}
-              <div style={{ display: "flex", gap: 4, marginBottom: 20 }}>
-                {(["process", "article"] as const).map((tab) => (
+              {/* Tab switcher */}
+              <div style={{ display: "flex", gap: 4, marginBottom: 18 }}>
+                {(["file", "text"] as const).map((tab) => (
                   <button
                     key={tab}
                     type="button"
-                    onClick={() => setMainTab(tab)}
+                    onClick={() => { setUploadTab(tab); setUploadResult(null); setPasteResult(null); }}
                     style={{
-                      flex: 1,
                       fontSize: 12,
                       fontWeight: 500,
-                      padding: "7px 14px",
-                      borderRadius: 8,
-                      border: `1px solid ${mainTab === tab ? "var(--foreground)" : "var(--card-border)"}`,
+                      padding: "5px 12px",
+                      borderRadius: 7,
+                      border: "1px solid var(--card-border)",
                       cursor: "pointer",
-                      background: mainTab === tab ? "var(--foreground)" : "transparent",
-                      color: mainTab === tab ? "var(--background)" : "var(--muted)",
-                      textAlign: "center",
+                      background: uploadTab === tab ? "var(--card-hover-bg)" : "transparent",
+                      color: uploadTab === tab ? "var(--foreground)" : "var(--muted)",
                     }}
                   >
-                    {tab === "process" ? "Upload process document" : "Add reference article"}
+                    {tab === "file" ? "Upload document" : "Paste text"}
                   </button>
                 ))}
               </div>
 
-              {mainTab === "process" ? (
-                <>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", marginBottom: 4 }}>
-                    Extract business rules from a document or email
-                  </p>
-                  <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 16 }}>
-                    Upload a PDF, Word document, or paste text from an email. The system will automatically extract business rules and add them to the knowledge base.
-                  </p>
-
-                  {/* Process sub-toggle: file vs paste */}
-                  <div style={{ display: "flex", gap: 4, marginBottom: 14 }}>
-                    {(["file", "text"] as const).map((sub) => (
-                      <button
-                        key={sub}
-                        type="button"
-                        onClick={() => setUploadTab(sub)}
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 500,
-                          padding: "4px 10px",
-                          borderRadius: 6,
-                          border: "1px solid var(--card-border)",
-                          cursor: "pointer",
-                          background: uploadTab === sub ? "var(--card-hover-bg)" : "transparent",
-                          color: uploadTab === sub ? "var(--foreground)" : "var(--muted)",
-                        }}
-                      >
-                        {sub === "file" ? "Upload file" : "Paste text"}
-                      </button>
-                    ))}
+              {uploadTab === "file" ? (
+                <form onSubmit={handleUpload}>
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); setUploadDragging(true); }}
+                    onDragLeave={() => setUploadDragging(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setUploadDragging(false);
+                      const f = e.dataTransfer.files[0];
+                      if (f) setUploadFile(f);
+                    }}
+                    style={{
+                      border: `1px dashed ${uploadDragging ? "var(--foreground)" : "var(--card-border)"}`,
+                      borderRadius: 8,
+                      padding: "18px 14px",
+                      textAlign: "center",
+                      cursor: "pointer",
+                      marginBottom: 10,
+                      background: uploadDragging ? "var(--card-hover-bg)" : "transparent",
+                      transition: "background 0.15s, border-color 0.15s",
+                    }}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,.docx,.txt"
+                      style={{ display: "none" }}
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) setUploadFile(f); }}
+                    />
+                    <span style={{ fontSize: 13, color: uploadFile ? "var(--foreground)" : "var(--muted-light)" }}>
+                      {uploadFile ? uploadFile.name : "Drop a PDF, DOCX, or TXT file here, or click to browse"}
+                    </span>
                   </div>
-
-                  {uploadTab === "file" ? (
-                    <form onSubmit={handleUpload}>
-                      <div
-                        onClick={() => fileInputRef.current?.click()}
-                        onDragOver={(e) => { e.preventDefault(); setUploadDragging(true); }}
-                        onDragLeave={() => setUploadDragging(false)}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          setUploadDragging(false);
-                          const f = e.dataTransfer.files[0];
-                          if (f) setUploadFile(f);
-                        }}
-                        style={{
-                          border: `1px dashed ${uploadDragging ? "var(--foreground)" : "var(--card-border)"}`,
-                          borderRadius: 8,
-                          padding: "18px 14px",
-                          textAlign: "center",
-                          cursor: "pointer",
-                          marginBottom: 10,
-                          background: uploadDragging ? "var(--card-hover-bg)" : "transparent",
-                          transition: "background 0.15s, border-color 0.15s",
-                        }}
-                      >
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          accept=".pdf,.docx,.txt"
-                          style={{ display: "none" }}
-                          onChange={(e) => { const f = e.target.files?.[0]; if (f) setUploadFile(f); }}
-                        />
-                        <span style={{ fontSize: 13, color: uploadFile ? "var(--foreground)" : "var(--muted-light)" }}>
-                          {uploadFile ? uploadFile.name : "Drop a PDF, DOCX, or TXT file here, or click to browse"}
-                        </span>
-                      </div>
-                      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                        <input
-                          className="search-input"
-                          value={uploadWorkflow}
-                          onChange={(e) => setUploadWorkflow(e.target.value)}
-                          placeholder="Workflow name"
-                          style={{ flex: 2, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                        />
-                        <input
-                          className="search-input"
-                          value={uploadDept}
-                          onChange={(e) => setUploadDept(e.target.value)}
-                          placeholder="Department"
-                          style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                        />
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
-                        <button
-                          type="submit"
-                          disabled={uploadLoading || !uploadFile || !uploadWorkflow.trim() || !uploadDept.trim()}
-                          style={{
-                            padding: "9px 18px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "none",
-                            background: "var(--foreground)", color: "var(--background)",
-                            cursor: uploadLoading || !uploadFile || !uploadWorkflow.trim() || !uploadDept.trim() ? "not-allowed" : "pointer",
-                            opacity: uploadLoading || !uploadFile || !uploadWorkflow.trim() || !uploadDept.trim() ? 0.45 : 1,
-                          }}
-                        >
-                          {uploadLoading ? "Extracting rules…" : "Extract rules"}
-                        </button>
-                      </div>
-                      {uploadLoading && (
-                        <div style={{ marginTop: 4, marginBottom: 6 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                            <span style={{ fontSize: 12, color: "var(--muted)" }}>{uploadStage}</span>
-                            <span style={{ fontSize: 12, color: "var(--muted-light)" }}>{uploadProgress}%</span>
-                          </div>
-                          <div style={{ height: 4, borderRadius: 99, background: "var(--card-border)", overflow: "hidden" }}>
-                            <div style={{ height: "100%", borderRadius: 99, background: "var(--foreground)", width: `${uploadProgress}%`, transition: "width 0.6s ease" }} />
-                          </div>
-                        </div>
-                      )}
-                      {uploadResult && (
-                        <div style={{ fontSize: 13, color: "#15803d", paddingTop: 4 }}>
-                          Done — {uploadResult.rules_extracted} rule{uploadResult.rules_extracted !== 1 ? "s" : ""} extracted, {uploadResult.rules_written} written to the wiki.
-                        </div>
-                      )}
-                      {uploadError && (
-                        <div style={{ fontSize: 13, color: "#b91c1c", paddingTop: 4 }}>{uploadError}</div>
-                      )}
-                    </form>
-                  ) : (
-                    <form onSubmit={handlePaste}>
-                      <textarea
-                        className="search-input"
-                        value={pasteText}
-                        onChange={(e) => setPasteText(e.target.value)}
-                        placeholder="Paste email content, meeting notes, or any text..."
-                        rows={6}
-                        style={{ width: "100%", padding: "9px 14px", fontSize: 13, borderRadius: 8, resize: "vertical", marginBottom: 10, fontFamily: "inherit", boxSizing: "border-box" }}
-                      />
-                      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                        <input
-                          className="search-input"
-                          value={pasteWorkflow}
-                          onChange={(e) => setPasteWorkflow(e.target.value)}
-                          placeholder="Workflow name"
-                          style={{ flex: 2, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                        />
-                        <input
-                          className="search-input"
-                          value={pasteDept}
-                          onChange={(e) => setPasteDept(e.target.value)}
-                          placeholder="Department"
-                          style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                        />
-                      </div>
-                      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                        <input
-                          className="search-input"
-                          value={pasteOwnerName}
-                          onChange={(e) => setPasteOwnerName(e.target.value)}
-                          placeholder="Owner name (optional)"
-                          style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                        />
-                        <input
-                          className="search-input"
-                          value={pasteOwnerEmail}
-                          onChange={(e) => setPasteOwnerEmail(e.target.value)}
-                          placeholder="Owner email (optional)"
-                          style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                        />
-                      </div>
-                      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                        <input
-                          className="search-input"
-                          value={pasteSource}
-                          onChange={(e) => setPasteSource(e.target.value)}
-                          placeholder="e.g. Email from Linda Chen, March 2026 (optional)"
-                          style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                        />
-                        <button
-                          type="submit"
-                          disabled={pasteLoading || !pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim()}
-                          style={{
-                            padding: "9px 18px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "none",
-                            background: "var(--foreground)", color: "var(--background)",
-                            cursor: pasteLoading || !pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim() ? "not-allowed" : "pointer",
-                            opacity: pasteLoading || !pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim() ? 0.45 : 1,
-                            flexShrink: 0, whiteSpace: "nowrap",
-                          }}
-                        >
-                          {pasteLoading ? "Extracting rules…" : "Extract rules"}
-                        </button>
-                      </div>
-                      {pasteResult && (
-                        <div style={{ fontSize: 13, color: "#15803d", paddingTop: 4 }}>
-                          Done — {pasteResult.rules_extracted} rule{pasteResult.rules_extracted !== 1 ? "s" : ""} extracted, {pasteResult.rules_written} written to the wiki.
-                        </div>
-                      )}
-                      {pasteError && (
-                        <div style={{ fontSize: 13, color: "#b91c1c", paddingTop: 4 }}>{pasteError}</div>
-                      )}
-                    </form>
-                  )}
-                </>
-              ) : (
-                <>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", marginBottom: 4 }}>
-                    Publish a reference document to the wiki
-                  </p>
-                  <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 16 }}>
-                    Upload a technical guide, architecture document, or process overview. It will be stored as a searchable article and linked to a workflow if specified.
-                  </p>
-                  <form onSubmit={handleArticleUpload}>
-                    <div
-                      onClick={() => articleFileInputRef.current?.click()}
-                      onDragOver={(e) => { e.preventDefault(); setArticleDragging(true); }}
-                      onDragLeave={() => setArticleDragging(false)}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        setArticleDragging(false);
-                        const f = e.dataTransfer.files[0];
-                        if (f) setArticleFile(f);
-                      }}
-                      style={{
-                        border: `1px dashed ${articleDragging ? "var(--foreground)" : "var(--card-border)"}`,
-                        borderRadius: 8,
-                        padding: "18px 14px",
-                        textAlign: "center",
-                        cursor: "pointer",
-                        marginBottom: 10,
-                        background: articleDragging ? "var(--card-hover-bg)" : "transparent",
-                        transition: "background 0.15s, border-color 0.15s",
-                      }}
-                    >
+                  <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                    <div style={{ flex: 2, display: "flex", flexDirection: "column", gap: 2 }}>
                       <input
-                        ref={articleFileInputRef}
-                        type="file"
-                        accept=".pdf,.docx,.txt,.md"
-                        style={{ display: "none" }}
-                        onChange={(e) => { const f = e.target.files?.[0]; if (f) setArticleFile(f); }}
+                        className="search-input"
+                        value={uploadWorkflow}
+                        onChange={(e) => setUploadWorkflow(e.target.value)}
+                        placeholder="Workflow / topic name"
+                        style={{ padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
                       />
-                      <span style={{ fontSize: 13, color: articleFile ? "var(--foreground)" : "var(--muted-light)" }}>
-                        {articleFile ? articleFile.name : "Drop a PDF, DOCX, TXT, or MD file here, or click to browse"}
+                      <span style={{ fontSize: 11, color: "var(--muted-light)", paddingLeft: 4 }}>
+                        Name of the process or topic this document relates to
                       </span>
                     </div>
-                    <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                      <input
-                        className="search-input"
-                        value={articleTitle}
-                        onChange={(e) => setArticleTitle(e.target.value)}
-                        placeholder="Article title"
-                        style={{ flex: 2, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                      />
-                      <input
-                        className="search-input"
-                        value={articleDept}
-                        onChange={(e) => setArticleDept(e.target.value)}
-                        placeholder="Department"
-                        style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                      />
-                    </div>
-                    <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                      <input
-                        className="search-input"
-                        value={articleWorkflow}
-                        onChange={(e) => setArticleWorkflow(e.target.value)}
-                        placeholder="Related workflow (optional)"
-                        style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                      />
-                      <button
-                        type="submit"
-                        disabled={articleLoading || !articleFile || !articleTitle.trim() || !articleDept.trim()}
-                        style={{
-                          padding: "9px 18px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "none",
-                          background: "var(--foreground)", color: "var(--background)",
-                          cursor: articleLoading || !articleFile || !articleTitle.trim() || !articleDept.trim() ? "not-allowed" : "pointer",
-                          opacity: articleLoading || !articleFile || !articleTitle.trim() || !articleDept.trim() ? 0.45 : 1,
-                          flexShrink: 0, whiteSpace: "nowrap",
-                        }}
-                      >
-                        {articleLoading ? "Publishing…" : "Publish article"}
-                      </button>
-                    </div>
-                    {articleLoading && (
-                      <div style={{ marginTop: 4, marginBottom: 6 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                          <span style={{ fontSize: 12, color: "var(--muted)" }}>{articleStage}</span>
-                          <span style={{ fontSize: 12, color: "var(--muted-light)" }}>{articleProgress}%</span>
-                        </div>
-                        <div style={{ height: 4, borderRadius: 99, background: "var(--card-border)", overflow: "hidden" }}>
-                          <div style={{ height: "100%", borderRadius: 99, background: "var(--foreground)", width: `${articleProgress}%`, transition: "width 0.6s ease" }} />
-                        </div>
+                    <DeptCombobox
+                      value={uploadDept}
+                      onChange={setUploadDept}
+                      departments={departments}
+                      style={{ flex: 1, alignSelf: "flex-start" }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+                    <input
+                      className="search-input"
+                      value={uploadOwnerName}
+                      onChange={(e) => setUploadOwnerName(e.target.value)}
+                      placeholder="Owner name (optional)"
+                      style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={uploadLoading || !uploadFile || !uploadWorkflow.trim() || !uploadDept.trim()}
+                      style={{
+                        padding: "9px 18px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "none",
+                        background: "var(--foreground)", color: "var(--background)",
+                        cursor: uploadLoading || !uploadFile || !uploadWorkflow.trim() || !uploadDept.trim() ? "not-allowed" : "pointer",
+                        opacity: uploadLoading || !uploadFile || !uploadWorkflow.trim() || !uploadDept.trim() ? 0.45 : 1,
+                        flexShrink: 0, whiteSpace: "nowrap",
+                      }}
+                    >
+                      {uploadLoading ? "Processing…" : "Upload and process"}
+                    </button>
+                  </div>
+                  {uploadLoading && (
+                    <div style={{ marginBottom: 6 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                        <span style={{ fontSize: 12, color: "var(--muted)" }}>{uploadStage}</span>
+                        <span style={{ fontSize: 12, color: "var(--muted-light)" }}>{uploadProgress}%</span>
                       </div>
-                    )}
-                    {articleResult && (
-                      <div style={{ fontSize: 13, color: "#15803d", paddingTop: 4 }}>
-                        Published —{" "}
-                        <a href={`/article/${articleResult.article_id}`} style={{ color: "#15803d", fontWeight: 500 }}>
-                          {articleResult.title}
-                        </a>
+                      <div style={{ height: 4, borderRadius: 99, background: "var(--card-border)", overflow: "hidden" }}>
+                        <div style={{ height: "100%", borderRadius: 99, background: "var(--foreground)", width: `${uploadProgress}%`, transition: "width 0.6s ease" }} />
                       </div>
-                    )}
-                    {articleError && (
-                      <div style={{ fontSize: 13, color: "#b91c1c", paddingTop: 4 }}>{articleError}</div>
-                    )}
-                  </form>
-                </>
+                    </div>
+                  )}
+                  {uploadResult && (
+                    <div style={{ fontSize: 13, color: "#15803d", paddingTop: 4 }}>
+                      {uploadResult.document_type === "article" ? (
+                        <>
+                          Published article:{" "}
+                          <a href={`/article/${uploadResult.article_id}`} style={{ color: "#15803d", fontWeight: 500 }}>
+                            {uploadResult.article_title}
+                          </a>
+                        </>
+                      ) : uploadResult.document_type === "both" ? (
+                        <>
+                          Extracted {uploadResult.rules_extracted} rule{uploadResult.rules_extracted !== 1 ? "s" : ""} and published article:{" "}
+                          {uploadResult.workflow_id ? (
+                            <a href={`/workflow/${uploadResult.workflow_id}`} style={{ color: "#15803d", fontWeight: 500 }}>
+                              {uploadResult.workflow_name}
+                            </a>
+                          ) : (
+                            <strong>{uploadResult.workflow_name}</strong>
+                          )}
+                          {uploadResult.article_id && (
+                            <>
+                              {" · "}
+                              <a href={`/article/${uploadResult.article_id}`} style={{ color: "#15803d", fontWeight: 500 }}>
+                                {uploadResult.article_title}
+                              </a>
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          Extracted {uploadResult.rules_extracted} rule{uploadResult.rules_extracted !== 1 ? "s" : ""} from{" "}
+                          {uploadResult.workflow_id ? (
+                            <a href={`/workflow/${uploadResult.workflow_id}`} style={{ color: "#15803d", fontWeight: 500 }}>
+                              {uploadResult.workflow_name}
+                            </a>
+                          ) : (
+                            <strong>{uploadResult.workflow_name}</strong>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {uploadError && (
+                    <div style={{ fontSize: 13, color: "#b91c1c", paddingTop: 4 }}>{uploadError}</div>
+                  )}
+                </form>
+              ) : (
+                <form onSubmit={handlePaste}>
+                  <textarea
+                    className="search-input"
+                    value={pasteText}
+                    onChange={(e) => setPasteText(e.target.value)}
+                    placeholder="Paste email content, meeting notes, or any text..."
+                    rows={6}
+                    style={{ width: "100%", padding: "9px 14px", fontSize: 13, borderRadius: 8, resize: "vertical", marginBottom: 10, fontFamily: "inherit", boxSizing: "border-box" }}
+                  />
+                  <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                    <div style={{ flex: 2, display: "flex", flexDirection: "column", gap: 2 }}>
+                      <input
+                        className="search-input"
+                        value={pasteWorkflow}
+                        onChange={(e) => setPasteWorkflow(e.target.value)}
+                        placeholder="Workflow / topic name"
+                        style={{ padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                      />
+                      <span style={{ fontSize: 11, color: "var(--muted-light)", paddingLeft: 4 }}>
+                        Name of the process or topic this document relates to
+                      </span>
+                    </div>
+                    <DeptCombobox
+                      value={pasteDept}
+                      onChange={setPasteDept}
+                      departments={departments}
+                      style={{ flex: 1, alignSelf: "flex-start" }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+                    <input
+                      className="search-input"
+                      value={pasteOwnerName}
+                      onChange={(e) => setPasteOwnerName(e.target.value)}
+                      placeholder="Owner name (optional)"
+                      style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={pasteLoading || !pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim()}
+                      style={{
+                        padding: "9px 18px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "none",
+                        background: "var(--foreground)", color: "var(--background)",
+                        cursor: pasteLoading || !pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim() ? "not-allowed" : "pointer",
+                        opacity: pasteLoading || !pasteText.trim() || !pasteWorkflow.trim() || !pasteDept.trim() ? 0.45 : 1,
+                        flexShrink: 0, whiteSpace: "nowrap",
+                      }}
+                    >
+                      {pasteLoading ? "Processing…" : "Upload and process"}
+                    </button>
+                  </div>
+                  {pasteLoading && (
+                    <div style={{ marginBottom: 6 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                        <span style={{ fontSize: 12, color: "var(--muted)" }}>{pasteStage}</span>
+                        <span style={{ fontSize: 12, color: "var(--muted-light)" }}>{pasteProgress}%</span>
+                      </div>
+                      <div style={{ height: 4, borderRadius: 99, background: "var(--card-border)", overflow: "hidden" }}>
+                        <div style={{ height: "100%", borderRadius: 99, background: "var(--foreground)", width: `${pasteProgress}%`, transition: "width 0.6s ease" }} />
+                      </div>
+                    </div>
+                  )}
+                  {pasteResult && (
+                    <div style={{ fontSize: 13, color: "#15803d", paddingTop: 4 }}>
+                      {pasteResult.document_type === "article" ? (
+                        <>
+                          Published article:{" "}
+                          <a href={`/article/${pasteResult.article_id}`} style={{ color: "#15803d", fontWeight: 500 }}>
+                            {pasteResult.article_title}
+                          </a>
+                        </>
+                      ) : pasteResult.document_type === "both" ? (
+                        <>
+                          Extracted {pasteResult.rules_extracted} rule{pasteResult.rules_extracted !== 1 ? "s" : ""} and published article:{" "}
+                          {pasteResult.workflow_id ? (
+                            <a href={`/workflow/${pasteResult.workflow_id}`} style={{ color: "#15803d", fontWeight: 500 }}>
+                              {pasteResult.workflow_name}
+                            </a>
+                          ) : (
+                            <strong>{pasteResult.workflow_name}</strong>
+                          )}
+                          {pasteResult.article_id && (
+                            <>
+                              {" · "}
+                              <a href={`/article/${pasteResult.article_id}`} style={{ color: "#15803d", fontWeight: 500 }}>
+                                {pasteResult.article_title}
+                              </a>
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          Extracted {pasteResult.rules_extracted} rule{pasteResult.rules_extracted !== 1 ? "s" : ""} from{" "}
+                          {pasteResult.workflow_id ? (
+                            <a href={`/workflow/${pasteResult.workflow_id}`} style={{ color: "#15803d", fontWeight: 500 }}>
+                              {pasteResult.workflow_name}
+                            </a>
+                          ) : (
+                            <strong>{pasteResult.workflow_name}</strong>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {pasteError && (
+                    <div style={{ fontSize: 13, color: "#b91c1c", paddingTop: 4 }}>{pasteError}</div>
+                  )}
+                </form>
               )}
             </div>
           )}
