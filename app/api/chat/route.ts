@@ -29,39 +29,6 @@ function isInjectionAttempt(msg: string): boolean {
   return false;
 }
 
-const DISCOVERY_PROMPT =
-  "You are a process discovery assistant for an internal knowledge base. " +
-  "Based on the user's question and the relevant content found below, guide them to the right place.\n\n" +
-  "Tell them:\n" +
-  "1. Which workflow or article is most relevant to their question and why (one sentence)\n" +
-  "2. A direct answer if the information is available in the search results\n" +
-  "3. Where to find more detail (link to the workflow or article)\n\n" +
-  "If nothing relevant is found, say: We do not have documented information about that process yet. " +
-  "Consider uploading relevant documents or flagging it as a gap.\n\n" +
-  "Never invent information. Only use what is in the provided search results.";
-
-function buildDiscoveryContext(results: {
-  type: string;
-  workflow_id?: string; workflow_name?: string; department?: string;
-  summary?: string; detail?: string;
-  article_id?: string; title?: string; snippet?: string;
-}[]): string {
-  if (!results.length) return "No relevant content found.";
-  const lines: string[] = [];
-  for (const r of results) {
-    if (r.type === "rule") {
-      lines.push(`[RULE] Workflow: "${r.workflow_name}" | Link: /workflow/${r.workflow_id}`);
-      lines.push(`  ${r.summary}`);
-      if (r.detail) lines.push(`  Detail: ${r.detail}`);
-    } else if (r.type === "article") {
-      lines.push(`[ARTICLE] Title: "${r.title}" | Link: /article/${r.article_id}`);
-      lines.push(`  ${r.snippet}`);
-    }
-    lines.push("");
-  }
-  return lines.join("\n");
-}
-
 const WORKFLOW_PROMPT_TEMPLATE =
   "The following are the only facts you know. You have no other knowledge. " +
   "You cannot answer questions about topics not in this list because you " +
@@ -86,10 +53,10 @@ const WORKFLOW_PROMPT_TEMPLATE =
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { messages, workflowId, searchResults } = body as {
+    const { messages, workflowId, context } = body as {
       messages: { role: "user" | "assistant"; content: string }[];
-      workflowId?: string;
-      searchResults?: { type: string; [key: string]: unknown }[];
+      workflowId?: string | null;
+      context?: string;
     };
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -107,8 +74,18 @@ export async function POST(req: NextRequest) {
     }
 
     if (!workflowId) {
-      const context = buildDiscoveryContext((searchResults ?? []) as Parameters<typeof buildDiscoveryContext>[0]);
-      const systemPrompt = `${DISCOVERY_PROMPT}\n\n=== SEARCH RESULTS ===\n${context}\n=== END OF SEARCH RESULTS ===`;
+      const systemPrompt =
+        "You are a process discovery assistant. Using ONLY the documented content below, " +
+        "answer the user's question and guide them to the right place.\n\n" +
+        "Rules:\n" +
+        "- If a DEPARTMENT name matches the query, mention it first and list all its workflows and articles\n" +
+        "- For each relevant item, state its name, one sentence on what it covers, and its link\n" +
+        "- Format links as bare paths: /workflow/[id] or /article/[id] — the UI renders them as clickable links\n" +
+        "- List every relevant item found — do not omit any\n" +
+        "- If nothing matches, say exactly: We do not have documented information about that yet.\n" +
+        "- Do not add phrases like 'Let me know if you need further assistance', 'I hope this helps', or any conversational filler. Answer directly and stop.\n\n" +
+        "DOCUMENTED CONTENT:\n" +
+        (context ?? "No relevant content found.");
       const stream = await chat(messages, systemPrompt);
       return new Response(stream, {
         headers: {

@@ -3,6 +3,8 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface Workflow {
   id: string;
@@ -114,8 +116,11 @@ export default function HomePage() {
   const [grouped, setGrouped] = useState<GroupedWorkflows>({});
   const [departments, setDepartments] = useState<string[]>([]);
   const [chatInput, setChatInput] = useState("");
+  const [chatQuestion, setChatQuestion] = useState("");
   const [chatResponse, setChatResponse] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatSlow, setChatSlow] = useState(false);
+  const chatSlowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [openDepts, setOpenDepts] = useState<Record<string, boolean>>({});
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
@@ -199,20 +204,63 @@ export default function HomePage() {
     });
   }, []);
 
+  function extractSearchQuery(input: string): string {
+    const stripped = input
+      .replace(/^(what information (do you have|is there|do we have)|tell me about|how do (i|we)|what is|what are|do you have|show me|find|look up|give me information (on|about)|can you tell me about|search for)\s+/i, "")
+      .replace(/\?$/, "")
+      .trim();
+    return stripped || input;
+  }
+
   async function handleChat(e: { preventDefault(): void }) {
     e.preventDefault();
     if (!chatInput.trim() || chatLoading) return;
     const q = chatInput.trim();
     setChatInput("");
     setChatResponse("");
+    setChatQuestion(q);
     setChatLoading(true);
+    setChatSlow(false);
+    if (chatSlowTimerRef.current) clearTimeout(chatSlowTimerRef.current);
+    chatSlowTimerRef.current = setTimeout(() => setChatSlow(true), 2000);
     try {
-      const searchRes = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-      const searchResults = searchRes.ok ? await searchRes.json() : [];
+      const searchQuery = extractSearchQuery(q);
+      const searchRes = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
+      type SR = { type: string; workflow_name?: string; workflow_id?: string; department?: string; summary?: string; detail?: string; article_id?: string; title?: string; snippet?: string };
+      const searchResults: SR[] = searchRes.ok ? await searchRes.json() : [];
+      // Group by department
+      const byDept = new Map<string, { workflows: Map<string, { name: string; rules: string[] }>; articles: { title: string; id: string; snippet: string }[] }>();
+      for (const r of searchResults) {
+        const dept = r.department ?? "General";
+        if (!byDept.has(dept)) byDept.set(dept, { workflows: new Map(), articles: [] });
+        const d = byDept.get(dept)!;
+        if (r.type === "rule" && r.workflow_id) {
+          if (!d.workflows.has(r.workflow_id)) d.workflows.set(r.workflow_id, { name: r.workflow_name ?? "", rules: [] });
+          if (r.summary) d.workflows.get(r.workflow_id)!.rules.push(r.summary);
+        } else if (r.type === "article" && r.article_id) {
+          d.articles.push({ title: r.title ?? "", id: r.article_id, snippet: r.snippet?.substring(0, 200) ?? "" });
+        }
+      }
+      const contextLines: string[] = [];
+      for (const [dept, data] of byDept) {
+        contextLines.push(`DEPARTMENT: ${dept}`);
+        for (const [wfId, wf] of data.workflows) {
+          contextLines.push(`  WORKFLOW: ${wf.name}`);
+          contextLines.push(`  LINK: /workflow/${wfId}`);
+          if (wf.rules.length) contextLines.push(`  RULES: ${wf.rules.slice(0, 5).join(" | ")}`);
+        }
+        for (const art of data.articles) {
+          contextLines.push(`  ARTICLE: ${art.title}`);
+          contextLines.push(`  LINK: /article/${art.id}`);
+          if (art.snippet) contextLines.push(`  SUMMARY: ${art.snippet}`);
+        }
+        contextLines.push("");
+      }
+      const context = contextLines.join("\n");
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [{ role: "user", content: q }], searchResults }),
+        body: JSON.stringify({ messages: [{ role: "user", content: q }], context, workflowId: null }),
       });
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
@@ -223,7 +271,9 @@ export default function HomePage() {
         setChatResponse((prev) => prev + decoder.decode(value));
       }
     } finally {
+      if (chatSlowTimerRef.current) clearTimeout(chatSlowTimerRef.current);
       setChatLoading(false);
+      setChatSlow(false);
     }
   }
 
@@ -609,51 +659,57 @@ export default function HomePage() {
                 {chatLoading ? "…" : "Ask"}
               </button>
             </form>
-            {chatResponse && (
-              <div style={{
-                marginTop: 16,
-                paddingTop: 16,
-                borderTop: "1px solid var(--card-border)",
-              }}>
-                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-                  <button
-                    type="button"
-                    onClick={() => setChatResponse("")}
-                    style={{
-                      fontSize: 11,
-                      color: "var(--muted-light)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: "2px 4px",
-                    }}
-                  >
-                    Clear
-                  </button>
-                </div>
-                <div style={{ fontSize: 13, color: "var(--foreground)", lineHeight: 1.7 }}>
-                  {chatResponse.split("\n").map((line, i) => {
-                    // Render inline markdown links: [text](url)
-                    const parts = line.split(/(\[[^\]]+\]\([^)]+\))/g);
-                    return (
-                      <p key={i} style={{ margin: "0 0 6px" }}>
-                        {parts.map((part, j) => {
-                          const m = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-                          if (m) {
-                            return (
-                              <a key={j} href={m[2]}
-                                style={{ color: "var(--foreground)", fontWeight: 500, textDecoration: "underline", textUnderlineOffset: 2 }}
-                              >
-                                {m[1]}
-                              </a>
-                            );
-                          }
-                          return part;
-                        })}
-                      </p>
-                    );
-                  })}
-                </div>
+            {(chatLoading || chatResponse) && (
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--card-border)" }}>
+                {chatQuestion && (
+                  <p style={{ fontSize: 12, color: "var(--muted-light)", marginBottom: 10, fontStyle: "italic" }}>
+                    "{chatQuestion}"
+                  </p>
+                )}
+                {chatLoading ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontSize: 13, color: "var(--muted)" }}>
+                      Searching the knowledge base
+                      <span style={{ display: "inline-block", animation: "chatDots 1.2s steps(4, end) infinite" }}>...</span>
+                    </span>
+                    {chatSlow && (
+                      <span style={{ fontSize: 12, color: "var(--muted-light)" }}>This may take a moment…</span>
+                    )}
+                    <style>{`@keyframes chatDots { 0%,20%{color:transparent;text-shadow:.4em 0 0 transparent,.8em 0 0 transparent} 40%{color:var(--muted);text-shadow:.4em 0 0 transparent,.8em 0 0 transparent} 60%{text-shadow:.4em 0 0 var(--muted),.8em 0 0 transparent} 80%,100%{text-shadow:.4em 0 0 var(--muted),.8em 0 0 var(--muted)} }`}</style>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => { setChatResponse(""); setChatQuestion(""); }}
+                        style={{ fontSize: 11, color: "var(--muted-light)", background: "none", border: "none", cursor: "pointer", padding: "2px 4px" }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    <div style={{ fontSize: 13, color: "var(--foreground)", lineHeight: 1.7 }}>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          p: ({ children }) => <p style={{ margin: "0 0 8px", lineHeight: 1.7, fontSize: 13 }}>{children}</p>,
+                          strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
+                          em: ({ children }) => <em style={{ fontStyle: "italic" }}>{children}</em>,
+                          ul: ({ children }) => <ul style={{ marginLeft: 20, marginBottom: 8, lineHeight: 1.7, listStyleType: "disc" }}>{children}</ul>,
+                          ol: ({ children }) => <ol style={{ marginLeft: 20, marginBottom: 8, lineHeight: 1.7 }}>{children}</ol>,
+                          li: ({ children }) => <li style={{ marginBottom: 4, fontSize: 13 }}>{children}</li>,
+                          a: ({ href, children }) => (
+                            <a href={href} style={{ color: "var(--foreground)", fontWeight: 500, textDecoration: "underline", textUnderlineOffset: 2 }}>
+                              {children}
+                            </a>
+                          ),
+                        }}
+                      >
+                        {chatResponse.replace(/(?<!\]\()(\/(workflow|article)\/[0-9a-f-]{36})/g, "[$1]($1)")}
+                      </ReactMarkdown>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface Rule {
   id: string;
@@ -128,7 +130,7 @@ export default function WorkflowPage() {
         ? nav.map((d) => d.department)
         : Object.keys(g).sort();
       const open: Record<string, boolean> = {};
-      allDepts.forEach((d) => (open[d] = true));
+      allDepts.forEach((d) => (open[d] = d === wf.department));
       setOpenDepts(open);
       setLoading(false);
     });
@@ -151,6 +153,32 @@ export default function WorkflowPage() {
         return acc;
       }, {})
     : {};
+
+  const suggestedQuestions: string[] = workflow
+    ? (() => {
+        const TYPE_QUESTIONS: Record<string, string> = {
+          approval: "Who needs to approve this, and what are the conditions?",
+          validation: "What validations are required before proceeding?",
+          exception: "What exceptions are allowed, and who can grant them?",
+          escalation: "When does this process need to be escalated?",
+          compliance: "What compliance or regulatory requirements apply?",
+          control: "What controls are in place to prevent errors?",
+          threshold: "What thresholds or limits apply in this process?",
+          deadline: "What are the key deadlines in this workflow?",
+          general: "What are the main rules governing this process?",
+        };
+        const types = Object.keys(rulesByType);
+        const qs = types
+          .map((t) => TYPE_QUESTIONS[t.toLowerCase()] ?? `What are the ${t} rules?`)
+          .slice(0, 3);
+        // If fewer than 3 types, pad with owner question if there's an owner
+        if (qs.length < 3) {
+          const owners = [...new Set(workflow.rules.map((r) => r.owner_name).filter(Boolean))];
+          if (owners.length > 0) qs.push(`Who is responsible for this process?`);
+        }
+        return qs.slice(0, 3);
+      })()
+    : [];
 
   async function handleDeleteWorkflow() {
     setDeleteWorkflowLoading(true);
@@ -701,11 +729,7 @@ export default function WorkflowPage() {
           {chatMessages.length === 0 && (
             <div style={{ color: "var(--muted-light)", fontSize: 12, lineHeight: 1.6, marginTop: 8 }}>
               <p style={{ marginBottom: 10 }}>Suggested questions:</p>
-              {[
-                "Who is responsible for approvals?",
-                "What are the key controls in this process?",
-                "What happens if a rule is violated?",
-              ].map((q) => (
+              {suggestedQuestions.map((q) => (
                 <button
                   key={q}
                   onClick={() => setChatInput(q)}
@@ -730,9 +754,28 @@ export default function WorkflowPage() {
                 background: msg.role === "user" ? "var(--foreground)" : "var(--card-bg)",
                 color: msg.role === "user" ? "var(--background)" : "var(--foreground)",
                 border: msg.role === "assistant" ? "1px solid var(--card-border)" : "none",
-                whiteSpace: "pre-wrap",
               }}>
-                {msg.content || (chatLoading && i === chatMessages.length - 1 ? "…" : "")}
+                {msg.role === "assistant" ? (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      p: ({ children }) => <p style={{ margin: "0 0 6px", fontSize: 12, lineHeight: 1.65 }}>{children}</p>,
+                      strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
+                      ul: ({ children }) => <ul style={{ marginLeft: 16, marginBottom: 6, listStyleType: "disc" }}>{children}</ul>,
+                      ol: ({ children }) => <ol style={{ marginLeft: 16, marginBottom: 6 }}>{children}</ol>,
+                      li: ({ children }) => <li style={{ marginBottom: 2, fontSize: 12 }}>{children}</li>,
+                      a: ({ href, children }) => (
+                        <a href={href} style={{ color: "var(--foreground)", fontWeight: 500, textDecoration: "underline", textUnderlineOffset: 2 }}>
+                          {children}
+                        </a>
+                      ),
+                    }}
+                  >
+                    {(msg.content || (chatLoading && i === chatMessages.length - 1 ? "…" : "")).replace(/(?<!\]\()(\/(workflow|article)\/[0-9a-f-]{36})/g, "[$1]($1)")}
+                  </ReactMarkdown>
+                ) : (
+                  msg.content || (chatLoading && i === chatMessages.length - 1 ? "…" : "")
+                )}
               </div>
             </div>
           ))}
