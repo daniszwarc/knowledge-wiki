@@ -206,6 +206,10 @@ async function migrate() {
       WITH (lists = 100)
     `);
 
+    // Process narrative columns on workflows
+    await client.query(`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS process_narrative text`);
+    await client.query(`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS narrative_generated_at timestamptz`);
+
     // Validation columns on articles
     await client.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS stakeholder_validated boolean DEFAULT false`);
     await client.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS validated_by text`);

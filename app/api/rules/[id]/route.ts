@@ -12,6 +12,15 @@ export async function DELETE(
       return NextResponse.json({ error: "ruleId is required" }, { status: 400 });
     }
 
+    const existing = await query<{ id: string; workflow_id: string }>(
+      `SELECT id, workflow_id FROM rules WHERE id = $1`,
+      [ruleId]
+    );
+    if (existing.length === 0) {
+      return NextResponse.json({ error: "Rule not found" }, { status: 404 });
+    }
+    const workflowId = existing[0].workflow_id;
+
     const deleted = await query<{ id: string }>(
       `DELETE FROM rules WHERE id = $1 RETURNING id`,
       [ruleId]
@@ -26,6 +35,9 @@ export async function DELETE(
        VALUES ('rules', $1, 'DELETE', 'manual-delete', $2::jsonb)`,
       [ruleId, JSON.stringify({ ruleId })]
     );
+
+    const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
+    fetch(`${base}/api/workflows/${workflowId}/generate-narrative`, { method: "POST" }).catch(() => {});
 
     return NextResponse.json({ success: true, ruleId });
   } catch (err) {

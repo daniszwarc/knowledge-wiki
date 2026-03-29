@@ -27,6 +27,15 @@ interface Workflow {
   description: string;
   completeness_score: number;
   rules: Rule[];
+  process_narrative: string | null;
+  narrative_generated_at: string | null;
+}
+
+interface RefArticle {
+  id: string;
+  title: string;
+  department: string | null;
+  stakeholder_validated: boolean;
 }
 
 interface AllWorkflow {

@@ -37,6 +37,9 @@ export async function POST(req: NextRequest) {
       ]
     );
 
+    const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
+    fetch(`${base}/api/workflows/${workflowId}/generate-narrative`, { method: "POST" }).catch(() => {});
+
     return NextResponse.json({ id: gapId }, { status: 201 });
   } catch (err) {
     console.error(err);

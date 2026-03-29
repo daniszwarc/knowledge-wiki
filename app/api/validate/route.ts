@@ -44,6 +44,11 @@ export async function POST(req: NextRequest) {
       [ruleId, validatedBy, JSON.stringify({ ruleId, validatedBy, note })]
     );
 
+    if (workflowId) {
+      const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";
+      fetch(`${base}/api/workflows/${workflowId}/generate-narrative`, { method: "POST" }).catch(() => {});
+    }
+
     return NextResponse.json({ success: true, ruleId });
   } catch (err) {
     console.error(err);
