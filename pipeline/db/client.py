@@ -67,9 +67,9 @@ def insert_rule(
             cur.execute(
                 """
                 INSERT INTO rules (
-                    id, workflow_id, summary, detail, rule_type, confidence,
+                    id, workflow_id, summary, detail, rule_type,
                     stakeholder_validated, owner_name, owner_email, source, source_url, extracted_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                 """,
                 (
                     new_id,
@@ -77,7 +77,6 @@ def insert_rule(
                     rule.summary,
                     rule.detail,
                     rule.rule_type,
-                    rule.confidence,
                     False,
                     owner_name,
                     owner_email,
@@ -99,7 +98,6 @@ def insert_rule(
                         {
                             "summary": rule.summary,
                             "rule_type": rule.rule_type,
-                            "confidence": rule.confidence,
                         }
                     ),
                 ),

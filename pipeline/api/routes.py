@@ -1,5 +1,6 @@
 from typing import Optional
 import os
+import re
 import threading
 import uuid
 from pathlib import Path
@@ -16,14 +17,13 @@ from db.client import (
     list_workflows,
 )
 from extract.pipeline import run_pipeline
-from extract.prompts import ARTICLE_CONVERSION_PROMPT
+
 from ingest.chunker import chunk_text
 from ingest.loader import load_document, load_txt
 
 router = APIRouter()
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
 WIKI_API_URL = os.getenv("WIKI_API_URL", "http://localhost:3000")
 UPLOADS_DIR = Path(__file__).resolve().parents[2] / "public" / "uploads"
 
@@ -92,50 +92,103 @@ def _delete_workflow_if_empty(workflow_name: str) -> None:
         pass
 
 
-def _inject_images(markdown: str, image_map: dict) -> str:
-    """Replace Figure N references inline; append any unreferenced images at the end."""
-    injected: set[str] = set()
-    for figure_key, img_url in image_map.items():
-        n = figure_key.replace("Figure ", "")
-        for pattern in [f"Figure {n}", f"figure {n}", f"Fig. {n}", f"Fig {n}"]:
-            if pattern in markdown:
-                markdown = markdown.replace(
-                    pattern,
-                    f"\n\n![{figure_key}]({img_url})\n\n*{figure_key}*\n\n",
-                )
-                injected.add(figure_key)
-                break
+def convert_to_markdown(raw_text: str, image_map: dict) -> str:
+    # Clean up the raw text first
+    lines = raw_text.split('\n')
+    cleaned = []
 
-    remaining = [(k, v) for k, v in image_map.items() if k not in injected]
-    if remaining:
-        markdown += "\n\n---\n\n"
-        for figure_key, img_url in remaining:
-            markdown += f"![{figure_key}]({img_url})\n\n*{figure_key}*\n\n"
+    skip_patterns = [
+        'Business Applications',
+        'Source: IS Department API Group',
+        'Page 1 of', 'Page 2 of', 'Page 3 of',
+        'Page 4 of', 'Page 5 of', 'Page 6 of',
+        'Page 7 of', 'Page 8 of', 'Page 9 of',
+        'Continue of',
+        'Click here to learn more about selection screens',
+        'Excel Help for AS400',
+    ]
 
-    return markdown
+    for line in lines:
+        line = line.strip()
+        if not line:
+            cleaned.append('')
+            continue
+        if any(p in line for p in skip_patterns):
+            continue
+        if re.match(r'^\d+/\d+$', line):
+            continue
+        cleaned.append(line)
 
+    # Remove consecutive blank lines
+    text = '\n'.join(cleaned)
+    text = re.sub(r'\n{3,}', '\n\n', text)
 
-def _convert_to_article_content(raw_text: str, title: str) -> Optional[str]:
-    """Convert raw text to clean markdown via LLM. Returns None on failure."""
-    try:
-        resp = httpx.post(
-            f"{OLLAMA_BASE_URL}/api/generate",
-            json={
-                "model": OLLAMA_MODEL,
-                "prompt": ARTICLE_CONVERSION_PROMPT.format(title=title, text=raw_text[:8000]),
-                "stream": False,
-            },
-            timeout=90.0,
+    # Now convert to markdown structure
+    output = []
+    lines = text.split('\n')
+    i = 0
+
+    while i < len(lines):
+        line = lines[i]
+
+        if not line:
+            output.append('')
+            i += 1
+            continue
+
+        # Figure references — replace with image tag
+        fig_match = re.match(
+            r'^(Figure\s+(\d+))[:\s\-]*(.*)?$',
+            line, re.IGNORECASE
         )
-        resp.raise_for_status()
-        content = resp.json().get("response", "").strip()
-        # Strip markdown code fences if the model wraps its output
-        if content.startswith("```"):
-            lines = content.splitlines()
-            content = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-        return content or None
-    except Exception:
-        return None
+        if fig_match:
+            fig_num = fig_match.group(2)
+            fig_key = f"Figure {fig_num}"
+            caption = fig_match.group(3).strip()
+            if fig_key in image_map:
+                img_url = image_map[fig_key]
+                cap_text = caption if caption else fig_key
+                output.append(f'\n![{cap_text}]({img_url})\n')
+            i += 1
+            continue
+
+        # Numbered steps: "1.", "2.", "3." etc
+        num_match = re.match(r'^(\d+)\.\s+(.+)$', line)
+        if num_match:
+            output.append(f'{num_match.group(1)}. {num_match.group(2)}')
+            i += 1
+            continue
+
+        # -OR- separators
+        if line == '-OR-':
+            output.append('\n*or*\n')
+            i += 1
+            continue
+
+        # Bullet points starting with filled square or dash
+        if line.startswith('▪') or line.startswith('■'):
+            output.append(f'- {line[1:].strip()}')
+            i += 1
+            continue
+
+        # Section headings: short lines, title case, no period
+        if (len(line) < 80
+                and not line.endswith('.')
+                and not line.endswith(',')
+                and not line[0].isdigit()
+                and not line.startswith('-')
+                and sum(1 for c in line if c.isupper()) > 1):
+            output.append(f'\n## {line}\n')
+            i += 1
+            continue
+
+        output.append(line)
+        i += 1
+
+    return '\n'.join(output)
+
+
+
 
 
 def _save_article(
@@ -186,7 +239,7 @@ async def ingest_file(
     source_url = f"/uploads/{job_id}/{filename}"
 
     try:
-        doc = load_document(data, filename, job_id=job_id, uploads_dir=UPLOADS_DIR)
+        doc = load_document(data, filename, job_id=job_id, uploads_dir=upload_dir)
     except HTTPException:
         raise
     except Exception as e:
@@ -211,10 +264,8 @@ async def ingest_file(
 
     rules_extracted = len(state["extracted_rules"])
 
-    # Step 2: Article conversion (inject extracted images if any)
-    article_content = _convert_to_article_content(doc.raw_text, workflow_name)
-    if article_content and doc.images:
-        article_content = _inject_images(article_content, doc.images)
+    # Step 2: Article conversion
+    article_content = convert_to_markdown(doc.raw_text, doc.images)
 
     # Step 3: Decide what to save
     if rules_extracted == 0:
@@ -321,7 +372,7 @@ def ingest_text(body: IngestTextRequest):
     rules_extracted = len(state["extracted_rules"])
 
     # Step 2: Article conversion
-    article_content = _convert_to_article_content(doc.raw_text, body.workflow_name)
+    article_content = convert_to_markdown(doc.raw_text, {})
 
     # Step 3: Decide what to save
     if rules_extracted == 0:

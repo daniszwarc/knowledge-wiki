@@ -15,77 +15,47 @@ Document excerpt:
 {text}"""
 
 ARTICLE_CONVERSION_PROMPT = """
-Convert the following raw document text into clean, well-structured \
-markdown suitable for a technical knowledge base.
+You are converting a business document into clean markdown.
 
-Rules:
-- Use ## for major sections, ### for subsections
-- Preserve all technical details, examples, code snippets, and \
-specific values exactly as written
-- Remove redundant bullet points — convert to prose where appropriate
-- Do not summarize or omit any content
-- Do not add commentary or introductions
-- Output only the markdown content, nothing else
+RULES:
+- Start immediately with the content. No preamble.
+- Use ## for section headings
+- Keep numbered steps as numbered lists
+- Remove these exact strings wherever they appear:
+  "Business Applications"
+  "Source: IS Department API Group, Inc."
+  "Continue of"
+  "Page 1 of", "Page 2 of", "Page 3 of" (any page number)
+- Where you see "Figure 1", "Figure 2" etc, write exactly:
+  [FIGURE_1], [FIGURE_2] etc on their own line
+- Do not write the word "Instructions" or "Title" or "Rules"
+- Do not explain what you are doing
+- Output only the cleaned document content
 
-Document title: {title}
-
-Raw text:
+DOCUMENT:
 {text}
 """
 
 EXTRACTION_PROMPT = """
-You are a senior business analyst extracting business rules from \
-enterprise documentation for a compliance knowledge base.
+You are extracting business rules from enterprise documentation.
 
-Workflow context: {workflow_name}
+Workflow: {workflow_name}
 Department: {department}
 
-Analyze this text carefully and extract every business rule, \
-constraint, decision point, validation requirement, approval \
-threshold, exception condition, or process obligation.
+Extract every business rule, constraint, approval requirement,
+validation rule, or process obligation from the text below.
 
-For each rule found, produce a detailed JSON object.
-Return ONLY a raw JSON array. No explanation, no markdown, \
-no backticks.
+Return ONLY a JSON array. No explanation, no markdown, no backticks.
 
-JSON format per rule:
+Each rule:
 {{
-  "summary": "A precise, specific one-sentence description that \
-includes the key constraint, threshold, or requirement. \
-Must be specific enough that someone can understand the rule \
-without reading the detail. Include numbers, roles, systems, \
-or timeframes if present in the source. \
-Bad example: 'Invoices require approval' \
-Good example: 'Vendor invoices exceeding $10,000 require \
-written approval from the VP of Finance before payment \
-can be processed'",
-
-  "detail": "A comprehensive explanation of this rule including: \
-- The exact condition or trigger that activates this rule \
-- All thresholds, limits, or specific values mentioned \
-- The roles or departments responsible for compliance \
-- The system or process where this rule is enforced \
-- Any exceptions or special cases explicitly mentioned \
-- The consequence or action if the rule is violated \
-- Any referenced forms, reports, or documents \
-Write in complete sentences. Minimum 3 sentences. \
-Quote specific values and thresholds exactly as stated \
-in the source document.",
-
-  "rule_type": "one of: validation | decision | calculation | \
-workflow | security | integration | other",
-
-  "confidence": "high if the rule is explicitly stated with \
-clear language | medium if implied or requires interpretation | \
-low if inferred from context"
+  "summary": "one specific sentence stating the rule",
+  "detail": "full explanation including thresholds, conditions, roles, systems, and exceptions. Minimum 3 sentences.",
+  "rule_type": "validation|decision|calculation|workflow|security|integration|other"
 }}
 
-Extract EVERY rule you can find. Do not merge multiple rules \
-into one. If a paragraph contains three separate constraints, \
-extract three separate rules.
+If no rules found: []
 
-If no business rules exist in this text, return: []
-
-Text to analyze:
+Text:
 {chunk}
 """

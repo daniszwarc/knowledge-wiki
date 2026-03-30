@@ -1,4 +1,5 @@
 from typing import Optional
+import base64
 import io
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,11 +22,19 @@ def load_pdf(data: bytes, filename: str, job_id: Optional[str] = None, uploads_d
     doc = fitz.open(stream=data, filetype="pdf")
     pages_text = []
     for page in doc:
-        pages_text.append(page.get_text())
+        # Extract with layout preservation
+        blocks = page.get_text("blocks")
+        # Sort blocks top-to-bottom, left-to-right
+        blocks.sort(key=lambda b: (round(b[1]/20)*20, b[0]))
+        page_text = "\n".join(
+            b[4].strip() for b in blocks
+            if b[4].strip() and b[6] == 0  # b[6]==0 means text block
+        )
+        pages_text.append(page_text)
 
     image_map: dict = {}
     if job_id and uploads_dir:
-        img_dir = uploads_dir / job_id
+        img_dir = uploads_dir
         for page_num in range(len(doc)):
             page = doc[page_num]
             image_list = page.get_images(full=True)

@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Sidebar } from "@/components/Sidebar";
+import { ChatPanel } from "@/components/ChatPanel";
 
 interface Article {
   id: string;
@@ -142,7 +143,7 @@ export default function ArticlePage() {
 
       <Sidebar activeArticleId={id} me={me} />
 
-      <main style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+      <main style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", borderRight: "1px solid var(--sidebar-border)" }}>
 
       {/* Top bar */}
       <div style={{ borderBottom: "1px solid var(--sidebar-border)", padding: "12px 32px", display: "flex", alignItems: "center", gap: 10 }}>
@@ -410,6 +411,12 @@ export default function ArticlePage() {
       </div>
 
       </main>
+
+      <ChatPanel
+        context={article.content}
+        title="Ask about this article"
+        subtitle="Answers are grounded in this document."
+      />
     </div>
   );
 }

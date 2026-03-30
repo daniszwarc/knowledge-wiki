@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Sidebar } from "@/components/Sidebar";
+import { ChatPanel } from "@/components/ChatPanel";
 
 interface Rule {
   id: string;
@@ -89,11 +90,6 @@ export default function WorkflowPage() {
   const [narrativeLoading, setNarrativeLoading] = useState(false);
   const [refArticles, setRefArticles] = useState<RefArticle[]>([]);
 
-  // Chat state
-  const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -121,10 +117,6 @@ export default function WorkflowPage() {
     }
   }, [id]);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages]);
-
   const rulesByType = workflow
     ? workflow.rules.reduce<Record<string, Rule[]>>((acc, r) => {
         const t = r.rule_type || "general";
@@ -133,32 +125,6 @@ export default function WorkflowPage() {
         return acc;
       }, {})
     : {};
-
-  const suggestedQuestions: string[] = workflow
-    ? (() => {
-        const TYPE_QUESTIONS: Record<string, string> = {
-          approval: "Who needs to approve this, and what are the conditions?",
-          validation: "What validations are required before proceeding?",
-          exception: "What exceptions are allowed, and who can grant them?",
-          escalation: "When does this process need to be escalated?",
-          compliance: "What compliance or regulatory requirements apply?",
-          control: "What controls are in place to prevent errors?",
-          threshold: "What thresholds or limits apply in this process?",
-          deadline: "What are the key deadlines in this workflow?",
-          general: "What are the main rules governing this process?",
-        };
-        const types = Object.keys(rulesByType);
-        const qs = types
-          .map((t) => TYPE_QUESTIONS[t.toLowerCase()] ?? `What are the ${t} rules?`)
-          .slice(0, 3);
-        // If fewer than 3 types, pad with owner question if there's an owner
-        if (qs.length < 3) {
-          const owners = [...new Set(workflow.rules.map((r) => r.owner_name).filter(Boolean))];
-          if (owners.length > 0) qs.push(`Who is responsible for this process?`);
-        }
-        return qs.slice(0, 3);
-      })()
-    : [];
 
   async function handleRegenerateNarrative() {
     setNarrativeLoading(true);
@@ -233,42 +199,6 @@ export default function WorkflowPage() {
       });
     } catch {
       // silent — badge stays unchanged on error
-    }
-  }
-
-  async function handleChat(e: { preventDefault(): void }) {
-    e.preventDefault();
-    if (!chatInput.trim() || chatLoading) return;
-    const userMsg = chatInput.trim();
-    setChatInput("");
-    const next = [...chatMessages, { role: "user" as const, content: userMsg }];
-    setChatMessages(next);
-    setChatLoading(true);
-
-    let assistantText = "";
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next, workflowId: id }),
-      });
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-      if (!reader) return;
-
-      setChatMessages((prev) => [...prev, { role: "assistant", content: "" }]);
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        assistantText += decoder.decode(value);
-        setChatMessages((prev) => [
-          ...prev.slice(0, -1),
-          { role: "assistant", content: assistantText },
-        ]);
-      }
-    } finally {
-      setChatLoading(false);
     }
   }
 
@@ -683,126 +613,11 @@ export default function WorkflowPage() {
         )}
       </main>
 
-      {/* ── Right panel: AI chat ─────────────────────────────────── */}
-      <div style={{
-        width: 340, flexShrink: 0,
-        display: "flex", flexDirection: "column",
-        background: "var(--sidebar-bg)",
-      }}>
-        {/* Chat header */}
-        <div style={{ padding: "18px 16px 14px", borderBottom: "1px solid var(--sidebar-border)", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-          <div>
-            <p style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", marginBottom: 2 }}>
-              Ask about this workflow
-            </p>
-            <p style={{ fontSize: 11, color: "var(--muted)" }}>
-              Answers are grounded in the rules shown on the left.
-            </p>
-          </div>
-          {chatMessages.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setChatMessages([])}
-              style={{
-                fontSize: 11,
-                color: "var(--muted-light)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: "2px 4px",
-                flexShrink: 0,
-              }}
-            >
-              Clear
-            </button>
-          )}
-        </div>
-
-        {/* Messages */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
-          {chatMessages.length === 0 && (
-            <div style={{ color: "var(--muted-light)", fontSize: 12, lineHeight: 1.6, marginTop: 8 }}>
-              <p style={{ marginBottom: 10 }}>Suggested questions:</p>
-              {suggestedQuestions.map((q) => (
-                <button
-                  key={q}
-                  onClick={() => setChatInput(q)}
-                  style={{
-                    display: "block", width: "100%", textAlign: "left",
-                    fontSize: 12, color: "var(--muted)", padding: "7px 10px",
-                    border: "1px solid var(--card-border)", borderRadius: 7,
-                    background: "var(--card-bg)", cursor: "pointer", marginBottom: 6,
-                  }}
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {chatMessages.map((msg, i) => (
-            <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}>
-              <div style={{
-                maxWidth: "88%", padding: "9px 12px", borderRadius: 10,
-                fontSize: 12, lineHeight: 1.65,
-                background: msg.role === "user" ? "var(--foreground)" : "var(--card-bg)",
-                color: msg.role === "user" ? "var(--background)" : "var(--foreground)",
-                border: msg.role === "assistant" ? "1px solid var(--card-border)" : "none",
-              }}>
-                {msg.role === "assistant" ? (
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      p: ({ children }) => <p style={{ margin: "0 0 6px", fontSize: 12, lineHeight: 1.65 }}>{children}</p>,
-                      strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
-                      ul: ({ children }) => <ul style={{ marginLeft: 16, marginBottom: 6, listStyleType: "disc" }}>{children}</ul>,
-                      ol: ({ children }) => <ol style={{ marginLeft: 16, marginBottom: 6 }}>{children}</ol>,
-                      li: ({ children }) => <li style={{ marginBottom: 2, fontSize: 12 }}>{children}</li>,
-                      a: ({ href, children }) => (
-                        <a href={href} style={{ color: "var(--foreground)", fontWeight: 500, textDecoration: "underline", textUnderlineOffset: 2 }}>
-                          {children}
-                        </a>
-                      ),
-                    }}
-                  >
-                    {(msg.content || (chatLoading && i === chatMessages.length - 1 ? "…" : "")).replace(/(?<!\]\()(\/(workflow|article)\/[0-9a-f-]{36})/g, "[$1]($1)")}
-                  </ReactMarkdown>
-                ) : (
-                  msg.content || (chatLoading && i === chatMessages.length - 1 ? "…" : "")
-                )}
-              </div>
-            </div>
-          ))}
-          <div ref={chatEndRef} />
-        </div>
-
-        {/* Input */}
-        <div style={{ padding: "10px 12px 14px", borderTop: "1px solid var(--sidebar-border)" }}>
-          <form onSubmit={handleChat} style={{ display: "flex", gap: 7 }}>
-            <input
-              className="search-input"
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              placeholder="Ask a question…"
-              style={{ flex: 1, padding: "8px 12px", fontSize: 12, borderRadius: 7 }}
-            />
-            <button
-              type="submit"
-              disabled={chatLoading || !chatInput.trim()}
-              style={{
-                padding: "8px 14px", fontSize: 12, fontWeight: 500,
-                borderRadius: 7, border: "none",
-                background: "var(--foreground)", color: "var(--background)",
-                cursor: chatLoading || !chatInput.trim() ? "not-allowed" : "pointer",
-                opacity: chatLoading || !chatInput.trim() ? 0.4 : 1,
-                flexShrink: 0,
-              }}
-            >
-              ↑
-            </button>
-          </form>
-        </div>
-      </div>
+      <ChatPanel
+        workflowId={id}
+        title="Ask about this workflow"
+        subtitle="Answers are grounded in the rules shown on the left."
+      />
 
     </div>
   );
