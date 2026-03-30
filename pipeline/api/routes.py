@@ -146,6 +146,7 @@ def _save_article(
     source_filename: str,
     source_url: Optional[str],
     content: Optional[str] = None,
+    article_type: str = "how_to_guide",
 ) -> tuple[str, str]:
     """Insert article row and fire embed in background. Returns (article_id, title)."""
     title = workflow_name
@@ -158,6 +159,7 @@ def _save_article(
         source_filename=source_filename,
         source_url=source_url,
         created_by=owner_name or "pipeline",
+        article_type=article_type,
     )
     threading.Thread(target=call_article_embed, args=(article_id, article_content), daemon=True).start()
     return article_id, title
@@ -168,6 +170,7 @@ async def ingest_file(
     file: UploadFile,
     workflow_name: str = Form(...),
     department: str = Form(...),
+    article_type: str = Form("how_to_guide"),
     owner_name: str = Form(""),
     owner_email: str = Form(""),
     source: str = Form(""),
@@ -224,6 +227,7 @@ async def ingest_file(
             source_filename=filename,
             source_url=source_url,
             content=article_content,
+            article_type=article_type,
         )
         return IngestResponse(
             job_id=job_id,
@@ -257,6 +261,7 @@ async def ingest_file(
             source_filename=filename,
             source_url=source_url,
             content=article_content,
+            article_type=article_type,
         )
         return IngestResponse(
             job_id=job_id,
@@ -329,6 +334,7 @@ def ingest_text(body: IngestTextRequest):
             source_filename=source,
             source_url=None,
             content=article_content,
+            article_type=body.article_type,
         )
         return IngestResponse(
             job_id=job_id,
@@ -362,6 +368,7 @@ def ingest_text(body: IngestTextRequest):
             source_filename=source,
             source_url=None,
             content=article_content,
+            article_type=body.article_type,
         )
         return IngestResponse(
             job_id=job_id,

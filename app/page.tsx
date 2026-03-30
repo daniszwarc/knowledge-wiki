@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Sidebar } from "@/components/Sidebar";
 
 interface Workflow {
   id: string;
@@ -21,17 +22,6 @@ interface GroupedWorkflows {
   [department: string]: Workflow[];
 }
 
-interface NavArticle {
-  id: string;
-  title: string;
-  stakeholder_validated: boolean;
-}
-
-interface NavDept {
-  department: string;
-  workflows: Workflow[];
-  articles: NavArticle[];
-}
 
 function DeptCombobox({
   value,
@@ -121,11 +111,8 @@ export default function HomePage() {
   const [chatLoading, setChatLoading] = useState(false);
   const [chatSlow, setChatSlow] = useState(false);
   const chatSlowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [openDepts, setOpenDepts] = useState<Record<string, boolean>>({});
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
-
-  // Nav data (includes articles per dept)
-  const [navData, setNavData] = useState<NavDept[]>([]);
+  const [navRefreshKey, setNavRefreshKey] = useState(0);
 
   // Workflow delete state
   const [confirmingDeleteWorkflow, setConfirmingDeleteWorkflow] = useState<string | null>(null);
@@ -135,6 +122,7 @@ export default function HomePage() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadWorkflow, setUploadWorkflow] = useState("");
   const [uploadDept, setUploadDept] = useState("");
+  const [uploadArticleType, setUploadArticleType] = useState<"how_to_guide" | "training_material">("how_to_guide");
   const [uploadOwnerName, setUploadOwnerName] = useState("");
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -159,6 +147,7 @@ export default function HomePage() {
   const [pasteText, setPasteText] = useState("");
   const [pasteWorkflow, setPasteWorkflow] = useState("");
   const [pasteDept, setPasteDept] = useState("");
+  const [pasteArticleType, setPasteArticleType] = useState<"how_to_guide" | "training_material">("how_to_guide");
   const [pasteOwnerName, setPasteOwnerName] = useState("");
   const [pasteProgress, setPasteProgress] = useState(0);
   const [pasteStage, setPasteStage] = useState("");
@@ -181,12 +170,6 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/nav")
-      .then((r) => r.json())
-      .then((data: NavDept[]) => { if (Array.isArray(data)) setNavData(data); });
-  }, []);
-
-  useEffect(() => {
     Promise.all([
       fetch("/api/workflows").then((r) => r.json()),
       fetch("/api/departments").then((r) => r.json()),
@@ -197,9 +180,6 @@ export default function HomePage() {
         g[w.department].push(w);
       }
       setGrouped(g);
-      const open: Record<string, boolean> = {};
-      Object.keys(g).forEach((d) => (open[d] = false));
-      setOpenDepts(open);
       setDepartments(Array.isArray(allDepts) ? allDepts : Object.keys(g).sort());
     });
   }, []);
@@ -289,11 +269,6 @@ export default function HomePage() {
       }
       setGrouped(g);
       setDepartments(Array.isArray(allDepts) ? allDepts : Object.keys(g).sort());
-      setOpenDepts((prev) => {
-        const next = { ...prev };
-        Object.keys(g).forEach((d) => { if (!(d in next)) next[d] = false; });
-        return next;
-      });
     });
   }
 
@@ -325,6 +300,7 @@ export default function HomePage() {
       fd.append("file", uploadFile);
       fd.append("workflow_name", uploadWorkflow.trim());
       fd.append("department", uploadDept.trim());
+      fd.append("article_type", uploadArticleType);
       if (uploadOwnerName.trim()) fd.append("owner_name", uploadOwnerName.trim());
       const res = await fetch("http://localhost:8000/ingest", { method: "POST", body: fd });
       if (!res.ok) {
@@ -347,6 +323,7 @@ export default function HomePage() {
       setUploadFile(null);
       setUploadWorkflow("");
       setUploadDept("");
+      setUploadArticleType("how_to_guide");
       setUploadOwnerName("");
       if (fileInputRef.current) fileInputRef.current.value = "";
       setDepartments((prev) => prev.includes(usedDept) ? prev : [...prev, usedDept].sort());
@@ -393,6 +370,7 @@ export default function HomePage() {
           text: pasteText.trim(),
           workflow_name: pasteWorkflow.trim(),
           department: pasteDept.trim(),
+          article_type: pasteArticleType,
           ...(pasteOwnerName.trim() && { owner_name: pasteOwnerName.trim() }),
         }),
       });
@@ -416,6 +394,7 @@ export default function HomePage() {
       setPasteText("");
       setPasteWorkflow("");
       setPasteDept("");
+      setPasteArticleType("how_to_guide");
       setPasteOwnerName("");
       setDepartments((prev) => prev.includes(usedDept) ? prev : [...prev, usedDept].sort());
       refreshWorkflows();
@@ -443,166 +422,18 @@ export default function HomePage() {
   }
 
   function refreshNav() {
-    fetch("/api/nav")
-      .then((r) => r.json())
-      .then((data: NavDept[]) => { if (Array.isArray(data)) setNavData(data); });
+    setNavRefreshKey((k) => k + 1);
   }
 
   function scrollToSection(dept: string) {
     sectionRefs.current[dept]?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  function toggleDept(dept: string) {
-    setOpenDepts((prev) => ({ ...prev, [dept]: !prev[dept] }));
-  }
-
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden", fontFamily: "var(--font-geist-sans), system-ui, sans-serif" }}>
 
       {/* ── Sidebar ──────────────────────────────────────────────── */}
-      <aside className="sidebar" style={{ width: 256, flexShrink: 0, display: "flex", flexDirection: "column", overflowY: "auto" }}>
-
-        {/* Brand */}
-        <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid var(--sidebar-border)" }}>
-          <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", color: "var(--muted)" }}>
-            APi GROUP - Knowledge Wiki
-          </span>
-        </div>
-
-        {/* Department nav */}
-        <nav style={{ flex: 1, paddingTop: 8 }}>
-          {navData.map((deptData) => {
-            const dept = deptData.department;
-            const deptArticles = deptData.articles;
-            return (
-              <div key={dept}>
-                <button
-                  onClick={() => toggleDept(dept)}
-                  style={{
-                    width: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "7px 16px",
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    letterSpacing: "0.06em",
-                    textTransform: "uppercase",
-                    color: "var(--muted)",
-                  }}
-                >
-                  <span style={{ fontSize: 13, opacity: 0.7, width: 16, textAlign: "center", flexShrink: 0 }}>{DEPT_ICONS[dept] ?? "◈"}</span>
-                  <span>{dept}</span>
-                  <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 400, color: "var(--muted-light)" }}>
-                    {grouped[dept]?.length ?? 0}
-                  </span>
-                  <ChevronIcon rotated={openDepts[dept]} />
-                </button>
-
-                {openDepts[dept] && (
-                  <div style={{ marginLeft: 40, paddingLeft: 8, borderLeft: "1px solid var(--card-border)", marginBottom: 4 }}>
-                    {grouped[dept]?.map((w) => (
-                      <button
-                        key={w.id}
-                        onClick={() => scrollToSection(dept)}
-                        style={{
-                          display: "block",
-                          width: "100%",
-                          textAlign: "left",
-                          padding: "6px 8px",
-                          fontSize: 12,
-                          color: "var(--muted)",
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          borderRadius: 6,
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--card-hover-bg)"; e.currentTarget.style.color = "var(--foreground)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--muted)"; }}
-                      >
-                        {w.name}
-                      </button>
-                    ))}
-                    {deptArticles.length > 0 && (
-                      <>
-                        <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted-light)", padding: "6px 8px 2px", opacity: 0.7 }}>
-                          Articles
-                        </div>
-                        {deptArticles.map((a) => (
-                          <a
-                            key={a.id}
-                            href={`/article/${a.id}`}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 6,
-                              padding: "6px 8px",
-                              fontSize: 12,
-                              color: "var(--muted)",
-                              textDecoration: "none",
-                              borderRadius: 6,
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--card-hover-bg)"; e.currentTarget.style.color = "var(--foreground)"; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.background = ""; e.currentTarget.style.color = "var(--muted)"; }}
-                          >
-                            <span style={{
-                              width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-                              background: a.stakeholder_validated ? "#4ade80" : "#f59e0b",
-                              opacity: a.stakeholder_validated ? 0.8 : 0.5,
-                            }} />
-                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {a.title}
-                            </span>
-                          </a>
-                        ))}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </nav>
-
-        {/* Footer */}
-        <div style={{ padding: "10px 14px 80px", borderTop: "1px solid var(--sidebar-border)" }}>
-          <a href="/experts" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
-            Subject matter experts
-          </a>
-          <a href="/validate" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
-            Validation review
-          </a>
-          <a href="/gaps" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
-            Flagged gaps
-          </a>
-          {me?.role === "admin" && (
-            <a href="/admin/users" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
-              Admin
-            </a>
-          )}
-          {me && (
-            <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--sidebar-border)" }}>
-              <p style={{ fontSize: 11, color: "var(--muted-light)", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {me.email}
-              </p>
-              <p style={{ fontSize: 10, color: "var(--muted-light)", opacity: 0.7, marginBottom: 6, textTransform: "capitalize" }}>
-                {me.role}
-              </p>
-              <form action="/api/auth/logout" method="POST">
-                <button type="submit" style={{ fontSize: 11, color: "var(--muted)", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>
-                  Sign out
-                </button>
-              </form>
-            </div>
-          )}
-        </div>
-      </aside>
+      <Sidebar me={me} refreshKey={navRefreshKey} />
 
       {/* ── Main ─────────────────────────────────────────────────── */}
       <main style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
@@ -800,6 +631,21 @@ export default function HomePage() {
                       style={{ flex: 1, alignSelf: "flex-start" }}
                     />
                   </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: "var(--muted)", marginBottom: 4, paddingLeft: 2 }}>
+                      Article type
+                    </label>
+                    <select
+                      required
+                      value={uploadArticleType}
+                      onChange={(e) => setUploadArticleType(e.target.value as "how_to_guide" | "training_material")}
+                      className="search-input"
+                      style={{ width: "100%", padding: "9px 14px", fontSize: 13, borderRadius: 8, cursor: "pointer" }}
+                    >
+                      <option value="how_to_guide">How to Guide — step-by-step instructions for using a system or completing a task</option>
+                      <option value="training_material">Training Material — broader documentation for onboarding or training new staff</option>
+                    </select>
+                  </div>
                   <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
                     <input
                       className="search-input"
@@ -908,6 +754,21 @@ export default function HomePage() {
                       departments={departments}
                       style={{ flex: 1, alignSelf: "flex-start" }}
                     />
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: "var(--muted)", marginBottom: 4, paddingLeft: 2 }}>
+                      Article type
+                    </label>
+                    <select
+                      required
+                      value={pasteArticleType}
+                      onChange={(e) => setPasteArticleType(e.target.value as "how_to_guide" | "training_material")}
+                      className="search-input"
+                      style={{ width: "100%", padding: "9px 14px", fontSize: 13, borderRadius: 8, cursor: "pointer" }}
+                    >
+                      <option value="how_to_guide">How to Guide — step-by-step instructions for using a system or completing a task</option>
+                      <option value="training_material">Training Material — broader documentation for onboarding or training new staff</option>
+                    </select>
                   </div>
                   <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
                     <input

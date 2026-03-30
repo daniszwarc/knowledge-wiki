@@ -12,19 +12,30 @@ interface NavWorkflow {
 interface NavArticle {
   id: string;
   title: string;
-  workflow_name: string | null;
+  department: string | null;
   stakeholder_validated: boolean;
 }
 
-interface NavDepartment {
-  department: string;
-  workflows: NavWorkflow[];
-  articles: NavArticle[];
+function groupByDepartment<T extends { department: string | null }>(
+  items: T[],
+  key: "workflows" | "articles"
+) {
+  const map = new Map<string, { department: string; [k: string]: unknown }>();
+  for (const item of items) {
+    const dept = item.department ?? "General";
+    if (!map.has(dept)) {
+      map.set(dept, { department: dept, [key]: [] });
+    }
+    (map.get(dept)![key] as T[]).push(item);
+  }
+  return Array.from(map.values()).sort((a, b) =>
+    a.department.localeCompare(b.department)
+  );
 }
 
 export async function GET() {
   try {
-    const [workflows, articles] = await Promise.all([
+    const [workflows, howToGuides, trainingMaterial] = await Promise.all([
       query<NavWorkflow>(
         `SELECT w.id, w.name, w.department, w.completeness_score,
                 COUNT(r.id) as rule_count
@@ -33,40 +44,23 @@ export async function GET() {
          GROUP BY w.id
          ORDER BY w.department, w.name`
       ),
-      query<{ id: string; title: string; department: string | null; workflow_name: string | null; stakeholder_validated: boolean }>(
-        `SELECT id, title, department, workflow_name, stakeholder_validated
-         FROM articles
+      query<NavArticle>(
+        `SELECT id, title, department, stakeholder_validated
+         FROM articles WHERE article_type = 'how_to_guide'
+         ORDER BY department, title`
+      ),
+      query<NavArticle>(
+        `SELECT id, title, department, stakeholder_validated
+         FROM articles WHERE article_type = 'training_material'
          ORDER BY department, title`
       ),
     ]);
 
-    const deptMap = new Map<string, NavDepartment>();
-
-    for (const wf of workflows) {
-      if (!deptMap.has(wf.department)) {
-        deptMap.set(wf.department, { department: wf.department, workflows: [], articles: [] });
-      }
-      deptMap.get(wf.department)!.workflows.push(wf);
-    }
-
-    for (const art of articles) {
-      const dept = art.department ?? "General";
-      if (!deptMap.has(dept)) {
-        deptMap.set(dept, { department: dept, workflows: [], articles: [] });
-      }
-      deptMap.get(dept)!.articles.push({
-        id: art.id,
-        title: art.title,
-        workflow_name: art.workflow_name,
-        stakeholder_validated: art.stakeholder_validated,
-      });
-    }
-
-    const result = Array.from(deptMap.values()).sort((a, b) =>
-      a.department.localeCompare(b.department)
-    );
-
-    return NextResponse.json(result);
+    return NextResponse.json({
+      businessRules: groupByDepartment(workflows, "workflows"),
+      howToGuides: groupByDepartment(howToGuides, "articles"),
+      trainingMaterial: groupByDepartment(trainingMaterial, "articles"),
+    });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

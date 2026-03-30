@@ -7,6 +7,7 @@ class IngestTextRequest(BaseModel):
     text: str
     workflow_name: str
     department: str
+    article_type: str = "how_to_guide"
     owner_name: str = ""
     owner_email: str = ""
     source: str = ""

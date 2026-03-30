@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Sidebar } from "@/components/Sidebar";
 
 interface Article {
   id: string;
@@ -137,7 +138,11 @@ export default function ArticlePage() {
   const canValidate = me && ["validator", "editor", "admin"].includes(me.role);
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--background)", fontFamily: "var(--font-geist-sans), system-ui, sans-serif" }}>
+    <div style={{ display: "flex", height: "100vh", overflow: "hidden", background: "var(--background)", fontFamily: "var(--font-geist-sans), system-ui, sans-serif" }}>
+
+      <Sidebar activeArticleId={id} me={me} />
+
+      <main style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
 
       {/* Top bar */}
       <div style={{ borderBottom: "1px solid var(--sidebar-border)", padding: "12px 32px", display: "flex", alignItems: "center", gap: 10 }}>
@@ -403,6 +408,8 @@ export default function ArticlePage() {
           </div>
         )}
       </div>
+
+      </main>
     </div>
   );
 }

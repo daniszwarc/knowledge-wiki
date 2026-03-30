@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Sidebar } from "@/components/Sidebar";
 
 interface Rule {
   id: string;
@@ -39,27 +40,7 @@ interface RefArticle {
   stakeholder_validated: boolean;
 }
 
-interface AllWorkflow {
-  id: string;
-  name: string;
-  department: string;
-}
 
-interface GroupedWorkflows {
-  [dept: string]: AllWorkflow[];
-}
-
-interface NavArticle {
-  id: string;
-  title: string;
-  stakeholder_validated: boolean;
-}
-
-const DEPT_ICONS: Record<string, string> = {
-  Finance: "₣",
-  Operations: "⚙",
-  IT: "⌨",
-};
 
 function confidenceBadgeStyle(c: "high" | "medium" | "low") {
   if (c === "high")
@@ -93,10 +74,6 @@ export default function WorkflowPage() {
   const id = params.id as string;
 
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
-  const [, setAllWorkflows] = useState<AllWorkflow[]>([]);
-  const [grouped, setGrouped] = useState<GroupedWorkflows>({});
-  const [navData, setNavData] = useState<{ department: string; workflows?: AllWorkflow[]; articles: NavArticle[] }[]>([]);
-  const [openDepts, setOpenDepts] = useState<Record<string, boolean>>({});
   const [me, setMe] = useState<{ id: string; email: string; role: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [flaggedRules, setFlaggedRules] = useState<Set<string>>(new Set());
@@ -127,25 +104,9 @@ export default function WorkflowPage() {
   useEffect(() => {
     Promise.all([
       fetch(`/api/workflows/${id}`).then((r) => r.json()),
-      fetch("/api/workflows").then((r) => r.json()),
-      fetch("/api/nav").then((r) => r.json()),
       fetch("/api/articles").then((r) => r.json()),
-    ]).then(([wf, all, nav, articles]: [Workflow, AllWorkflow[], { department: string; articles: NavArticle[] }[], RefArticle[]]) => {
+    ]).then(([wf, articles]: [Workflow, RefArticle[]]) => {
       setWorkflow(wf);
-      const g: GroupedWorkflows = {};
-      for (const w of all) {
-        if (!g[w.department]) g[w.department] = [];
-        g[w.department].push(w);
-      }
-      setAllWorkflows(all);
-      setGrouped(g);
-      if (Array.isArray(nav)) setNavData(nav);
-      const allDepts = Array.isArray(nav)
-        ? nav.map((d) => d.department)
-        : Object.keys(g).sort();
-      const open: Record<string, boolean> = {};
-      allDepts.forEach((d) => (open[d] = d === wf.department));
-      setOpenDepts(open);
       if (Array.isArray(articles)) {
         setRefArticles(articles.filter((a: RefArticle) =>
           a.workflow_name?.toLowerCase() === wf.name.toLowerCase()
@@ -336,133 +297,8 @@ export default function WorkflowPage() {
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden", fontFamily: "var(--font-geist-sans), system-ui, sans-serif" }}>
 
-      {/* ── Left sidebar: same nav as homepage ──────────────────── */}
-      <aside className="sidebar" style={{ width: 240, flexShrink: 0, display: "flex", flexDirection: "column", overflowY: "auto" }}>
-
-        {/* Brand */}
-        <div
-          style={{ padding: "18px 18px 14px", borderBottom: "1px solid var(--sidebar-border)", cursor: "pointer" }}
-          onClick={() => router.push("/")}
-        >
-          <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", color: "var(--muted)" }}>
-            APi GROUP - Knowledge Wiki
-          </span>
-        </div>
-
-        {/* Department nav */}
-        <nav style={{ flex: 1, paddingTop: 6 }}>
-          {navData.map((deptData) => {
-            const dept = deptData.department;
-            const articles = deptData.articles ?? [];
-            return (
-            <div key={dept}>
-              <button
-                onClick={() => setOpenDepts((p) => ({ ...p, [dept]: !p[dept] }))}
-                style={{
-                  width: "100%", display: "flex", alignItems: "center", gap: 8,
-                  padding: "6px 14px", background: "none", border: "none",
-                  cursor: "pointer", fontSize: 11, fontWeight: 700,
-                  letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--muted)",
-                }}
-              >
-                <span style={{ fontSize: 14, opacity: 0.6, width: 14, textAlign: "center", flexShrink: 0 }}>{DEPT_ICONS[dept] ?? "◈"}</span>
-                <span>{dept}</span>
-                <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 400, color: "var(--muted-light)" }}>
-                  {grouped[dept]?.length ?? 0}
-                </span>
-                <ChevronIcon rotated={!!openDepts[dept]} />
-              </button>
-
-              {openDepts[dept] && (
-                <div style={{ marginLeft: 36, paddingLeft: 8, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
-                  {grouped[dept]?.map((w) => {
-                    const active = w.id === id;
-                    return (
-                      <a
-                        key={w.id}
-                        href={`/workflow/${w.id}`}
-                        style={{
-                          display: "block", padding: "5px 7px", fontSize: 12,
-                          color: active ? "var(--foreground)" : "var(--muted)",
-                          fontWeight: active ? 600 : 400,
-                          background: active ? "var(--card-hover-bg)" : "none",
-                          borderRadius: 5, textDecoration: "none",
-                          borderLeft: active ? "2px solid var(--foreground)" : "2px solid transparent",
-                          marginLeft: -2,
-                          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                        }}
-                      >
-                        {w.name}
-                      </a>
-                    );
-                  })}
-                  {articles.length > 0 && (
-                    <>
-                      <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted-light)", padding: "6px 7px 2px", opacity: 0.7 }}>
-                        Articles
-                      </div>
-                      {articles.map((a) => (
-                        <a
-                          key={a.id}
-                          href={`/article/${a.id}`}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 6,
-                            padding: "5px 7px", fontSize: 12,
-                            color: "var(--muted)", textDecoration: "none", borderRadius: 5,
-                            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                          }}
-                        >
-                          <span style={{
-                            width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-                            background: a.stakeholder_validated ? "#4ade80" : "#f59e0b",
-                            opacity: a.stakeholder_validated ? 0.8 : 0.5,
-                          }} />
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {a.title}
-                          </span>
-                        </a>
-                      ))}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-            );
-          })}
-        </nav>
-
-        <div style={{ padding: "10px 14px 80px", borderTop: "1px solid var(--sidebar-border)" }}>
-          <a href="/experts" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
-            Subject matter experts
-          </a>
-          <a href="/validate" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
-            Validation review
-          </a>
-          <a href="/gaps" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
-            Flagged gaps
-          </a>
-          {me?.role === "admin" && (
-            <a href="/admin/users" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
-              Admin
-            </a>
-          )}
-          {me && (
-            <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--sidebar-border)" }}>
-              <p style={{ fontSize: 11, color: "var(--muted-light)", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {me.email}
-              </p>
-              <p style={{ fontSize: 10, color: "var(--muted-light)", opacity: 0.7, marginBottom: 6, textTransform: "capitalize" }}>
-                {me.role}
-              </p>
-              <form action="/api/auth/logout" method="POST">
-                <button type="submit" style={{ fontSize: 11, color: "var(--muted)", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>
-                  Sign out
-                </button>
-              </form>
-            </div>
-          )}
-        </div>
-      </aside>
+      {/* ── Left sidebar ─────────────────────────────────────────── */}
+      <Sidebar activeWorkflowId={id} me={me} />
 
       {/* ── Main: rule list ──────────────────────────────────────── */}
       <main style={{ flex: 1, overflowY: "auto", borderRight: "1px solid var(--sidebar-border)" }}>
@@ -984,14 +820,3 @@ function relativeTime(dateStr: string | null): string {
   return `${days}d ago`;
 }
 
-function ChevronIcon({ rotated }: { rotated: boolean }) {
-  return (
-    <svg
-      width={11} height={11} fill="none" stroke="currentColor" strokeWidth={2}
-      viewBox="0 0 24 24"
-      style={{ display: "block", transition: "transform 0.15s", transform: rotated ? "rotate(90deg)" : "none", color: "var(--muted-light)" }}
-    >
-      <path d="m9 18 6-6-6-6" />
-    </svg>
-  );
-}

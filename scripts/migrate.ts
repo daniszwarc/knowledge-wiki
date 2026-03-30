@@ -223,6 +223,16 @@ async function migrate() {
       FOR EACH ROW EXECUTE FUNCTION audit_trigger_fn()
     `);
 
+    // article_type column
+    await client.query(`
+      ALTER TABLE articles ADD COLUMN IF NOT EXISTS
+        article_type text DEFAULT 'how_to_guide'
+        CHECK (article_type IN ('how_to_guide', 'training_material'))
+    `);
+
+    // Clear existing articles
+    await client.query(`DELETE FROM articles`);
+
     await client.query("COMMIT");
     console.log("Migration completed successfully");
   } catch (err) {

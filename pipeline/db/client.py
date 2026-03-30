@@ -130,6 +130,7 @@ def insert_article(
     source_filename: str,
     source_url: Optional[str],
     created_by: str,
+    article_type: str = "how_to_guide",
 ) -> str:
     new_id = str(uuid.uuid4())
     conn = get_connection()
@@ -139,11 +140,11 @@ def insert_article(
                 """
                 INSERT INTO articles (
                     id, title, department, workflow_name, content,
-                    source_filename, source_url, created_by
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    source_filename, source_url, created_by, article_type
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (new_id, title, department, workflow_name or None,
-                 content, source_filename, source_url, created_by),
+                 content, source_filename, source_url, created_by, article_type),
             )
             conn.commit()
         return new_id
