@@ -24,7 +24,19 @@ router = APIRouter()
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
+WIKI_API_URL = os.getenv("WIKI_API_URL", "http://localhost:3000")
 UPLOADS_DIR = Path(__file__).resolve().parents[2] / "public" / "uploads"
+
+
+def _trigger_narrative(workflow_id: str) -> None:
+    """Fire-and-forget: ask the wiki to regenerate the process narrative."""
+    try:
+        httpx.post(
+            f"{WIKI_API_URL}/api/workflows/{workflow_id}/generate-narrative",
+            timeout=5.0,
+        )
+    except Exception:
+        pass
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -233,6 +245,9 @@ async def ingest_file(
     )
     workflow_id = find_workflow_id(workflow_name)
 
+    if workflow_id:
+        threading.Thread(target=_trigger_narrative, args=(workflow_id,), daemon=True).start()
+
     if article_content:
         article_id, title = _save_article(
             raw_text=doc.raw_text,
@@ -334,6 +349,9 @@ def ingest_text(body: IngestTextRequest):
         [e for e in state["errors"] if "DB write error" in e]
     )
     workflow_id = find_workflow_id(body.workflow_name)
+
+    if workflow_id:
+        threading.Thread(target=_trigger_narrative, args=(workflow_id,), daemon=True).start()
 
     if article_content:
         article_id, title = _save_article(

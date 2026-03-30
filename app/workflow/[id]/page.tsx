@@ -35,6 +35,7 @@ interface RefArticle {
   id: string;
   title: string;
   department: string | null;
+  workflow_name: string | null;
   stakeholder_validated: boolean;
 }
 
@@ -107,6 +108,9 @@ export default function WorkflowPage() {
   const [confirmingDeleteWorkflow, setConfirmingDeleteWorkflow] = useState(false);
   const [deleteWorkflowLoading, setDeleteWorkflowLoading] = useState(false);
   const [deleteWorkflowError, setDeleteWorkflowError] = useState("");
+  const [view, setView] = useState<"overview" | "rules">("overview");
+  const [narrativeLoading, setNarrativeLoading] = useState(false);
+  const [refArticles, setRefArticles] = useState<RefArticle[]>([]);
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
@@ -125,7 +129,8 @@ export default function WorkflowPage() {
       fetch(`/api/workflows/${id}`).then((r) => r.json()),
       fetch("/api/workflows").then((r) => r.json()),
       fetch("/api/nav").then((r) => r.json()),
-    ]).then(([wf, all, nav]: [Workflow, AllWorkflow[], { department: string; articles: NavArticle[] }[]]) => {
+      fetch("/api/articles").then((r) => r.json()),
+    ]).then(([wf, all, nav, articles]: [Workflow, AllWorkflow[], { department: string; articles: NavArticle[] }[], RefArticle[]]) => {
       setWorkflow(wf);
       const g: GroupedWorkflows = {};
       for (const w of all) {
@@ -141,6 +146,11 @@ export default function WorkflowPage() {
       const open: Record<string, boolean> = {};
       allDepts.forEach((d) => (open[d] = d === wf.department));
       setOpenDepts(open);
+      if (Array.isArray(articles)) {
+        setRefArticles(articles.filter((a: RefArticle) =>
+          a.workflow_name?.toLowerCase() === wf.name.toLowerCase()
+        ));
+      }
       setLoading(false);
     });
 
@@ -188,6 +198,19 @@ export default function WorkflowPage() {
         return qs.slice(0, 3);
       })()
     : [];
+
+  async function handleRegenerateNarrative() {
+    setNarrativeLoading(true);
+    try {
+      const res = await fetch(`/api/workflows/${id}/generate-narrative`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setWorkflow((wf) => wf ? { ...wf, process_narrative: data.narrative, narrative_generated_at: data.generated_at } : wf);
+      }
+    } finally {
+      setNarrativeLoading(false);
+    }
+  }
 
   async function handleDeleteWorkflow() {
     setDeleteWorkflowLoading(true);
@@ -523,7 +546,91 @@ export default function WorkflowPage() {
           </div>
         </div>
 
-        {/* Rules grouped by type */}
+        {/* View toggle */}
+        <div style={{ padding: "0 32px", borderBottom: "1px solid var(--sidebar-border)" }}>
+          <div style={{ display: "flex", gap: 4, padding: "12px 0" }}>
+            {(["overview", "rules"] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                style={{
+                  fontSize: 12, fontWeight: 500, padding: "5px 16px",
+                  borderRadius: 99, border: "1px solid var(--card-border)",
+                  background: view === v ? "var(--foreground)" : "none",
+                  color: view === v ? "var(--background)" : "var(--muted)",
+                  cursor: "pointer",
+                }}
+              >
+                {v === "overview" ? "Overview" : "Rules"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Overview view */}
+        {view === "overview" && (
+          <div style={{ padding: "28px 32px 40px", maxWidth: 720 }}>
+            {workflow.process_narrative ? (
+              <>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    h2: ({ children }) => <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--foreground)", marginTop: 28, marginBottom: 10, letterSpacing: "-0.01em" }}>{children}</h2>,
+                    h3: ({ children }) => <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", marginTop: 20, marginBottom: 8 }}>{children}</h3>,
+                    p: ({ children }) => <p style={{ fontSize: 13, color: "var(--foreground)", lineHeight: 1.75, marginBottom: 14 }}>{children}</p>,
+                    ul: ({ children }) => <ul style={{ marginLeft: 20, marginBottom: 14, listStyleType: "disc" }}>{children}</ul>,
+                    ol: ({ children }) => <ol style={{ marginLeft: 20, marginBottom: 14 }}>{children}</ol>,
+                    li: ({ children }) => <li style={{ fontSize: 13, color: "var(--foreground)", lineHeight: 1.7, marginBottom: 4 }}>{children}</li>,
+                    strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
+                  }}
+                >
+                  {workflow.process_narrative}
+                </ReactMarkdown>
+                <div style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 14 }}>
+                  <span style={{ fontSize: 11, color: "var(--muted-light)" }}>
+                    Generated from {workflow.rules.length} documented rule{workflow.rules.length !== 1 ? "s" : ""}.{" "}
+                    Last updated {relativeTime(workflow.narrative_generated_at)}.
+                  </span>
+                  {me && ["editor", "admin"].includes(me.role) && (
+                    <button
+                      onClick={handleRegenerateNarrative}
+                      disabled={narrativeLoading}
+                      style={{
+                        fontSize: 11, padding: "3px 10px", borderRadius: 6,
+                        border: "1px solid var(--card-border)", background: "none",
+                        color: "var(--muted)", cursor: narrativeLoading ? "not-allowed" : "pointer",
+                        opacity: narrativeLoading ? 0.5 : 1,
+                      }}
+                    >
+                      {narrativeLoading ? "Regenerating…" : "Regenerate"}
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 12 }}>
+                <p style={{ fontSize: 13, color: "var(--muted)" }}>No overview generated yet.</p>
+                {me && ["editor", "admin"].includes(me.role) && (
+                  <button
+                    onClick={handleRegenerateNarrative}
+                    disabled={narrativeLoading}
+                    style={{
+                      fontSize: 12, padding: "6px 16px", borderRadius: 7,
+                      border: "1px solid var(--card-border)", background: "var(--card-bg)",
+                      color: "var(--foreground)", cursor: narrativeLoading ? "not-allowed" : "pointer",
+                      opacity: narrativeLoading ? 0.5 : 1, fontWeight: 500,
+                    }}
+                  >
+                    {narrativeLoading ? "Generating…" : "Generate overview"}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Rules view */}
+        {view === "rules" && (
         <div style={{ padding: "24px 32px 64px" }}>
           {Object.entries(rulesByType).map(([type, rules]) => (
             <div key={type} style={{ marginBottom: 36 }}>
@@ -696,6 +803,48 @@ export default function WorkflowPage() {
             </div>
           ))}
         </div>
+        )}
+
+        {/* Reference documents — always visible */}
+        {refArticles.length > 0 && (
+          <div style={{ padding: "24px 32px 40px", borderTop: "1px solid var(--sidebar-border)" }}>
+            <h2 style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 14 }}>
+              Reference documents
+            </h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {refArticles.map((a) => (
+                <a
+                  key={a.id}
+                  href={`/article/${a.id}`}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "10px 14px", borderRadius: 8,
+                    border: "1px solid var(--card-border)", background: "var(--card-bg)",
+                    textDecoration: "none",
+                  }}
+                >
+                  <span style={{
+                    width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+                    background: a.stakeholder_validated ? "#4ade80" : "#f59e0b",
+                  }} />
+                  <span style={{ fontSize: 13, color: "var(--foreground)", fontWeight: 500, flex: 1 }}>
+                    {a.title}
+                  </span>
+                  {a.department && (
+                    <span style={{ fontSize: 11, color: "var(--muted-light)", flexShrink: 0 }}>
+                      {a.department}
+                    </span>
+                  )}
+                  {a.stakeholder_validated && (
+                    <span style={{ fontSize: 11, padding: "1px 7px", borderRadius: 99, background: "#dbeafe", color: "#1e40af", border: "1px solid #bfdbfe", flexShrink: 0 }}>
+                      Validated
+                    </span>
+                  )}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </main>
 
       {/* ── Right panel: AI chat ─────────────────────────────────── */}
@@ -821,6 +970,18 @@ export default function WorkflowPage() {
 
     </div>
   );
+}
+
+function relativeTime(dateStr: string | null): string {
+  if (!dateStr) return "unknown";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 function ChevronIcon({ rotated }: { rotated: boolean }) {
