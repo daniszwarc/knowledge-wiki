@@ -15,22 +15,24 @@ Document excerpt:
 {text}"""
 
 ARTICLE_CONVERSION_PROMPT = """
-You are converting a business document into clean markdown.
+You are converting a business document into a clean HTML article.
 
 RULES:
-- Start immediately with the content. No preamble.
-- Use ## for section headings
-- Keep numbered steps as numbered lists
-- Remove these exact strings wherever they appear:
+- Output only HTML. No markdown. No backticks. No preamble.
+- Use <h2> for section headings
+- Use <p> for body text and paragraphs
+- Use <ol> and <li> for numbered steps
+- Use <ul> and <li> for bullet points
+- Use <strong> for emphasis
+- Remove these strings wherever they appear:
   "Business Applications"
   "Source: IS Department API Group, Inc."
   "Continue of"
-  "Page 1 of", "Page 2 of", "Page 3 of" (any page number)
-- Where you see "Figure 1", "Figure 2" etc, write exactly:
-  [FIGURE_1], [FIGURE_2] etc on their own line
-- Do not write the word "Instructions" or "Title" or "Rules"
+  "Page 1 of", "Page 2 of", "Page 3 of" (any page number variation)
+- The text may contain [FIGURE_1], [FIGURE_2] etc. placeholders. Preserve them exactly as they appear, each on its own line
+- Do not output <html>, <head>, <body>, or any wrapper tags
 - Do not explain what you are doing
-- Output only the cleaned document content
+- Output only the article content
 
 DOCUMENT:
 {text}

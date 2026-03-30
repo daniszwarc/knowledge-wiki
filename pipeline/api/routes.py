@@ -24,6 +24,7 @@ from ingest.loader import load_document, load_txt
 router = APIRouter()
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:270m")
 WIKI_API_URL = os.getenv("WIKI_API_URL", "http://localhost:3000")
 UPLOADS_DIR = Path(__file__).resolve().parents[2] / "public" / "uploads"
 
@@ -92,100 +93,142 @@ def _delete_workflow_if_empty(workflow_name: str) -> None:
         pass
 
 
-def convert_to_markdown(raw_text: str, image_map: dict) -> str:
-    # Clean up the raw text first
-    lines = raw_text.split('\n')
-    cleaned = []
 
+def convert_to_html(raw_text: str, image_map: dict) -> str:
+    # Step 1: inject [FIGURE_N] markers — consume surrounding parens too
+    text = re.sub(
+        r'\(?\s*Figure\s+(\d+)[^)\n]*\)?',
+        lambda m: f'[FIGURE_{m.group(1)}]',
+        raw_text,
+        flags=re.IGNORECASE,
+    )
+
+    # Step 2: remove boilerplate lines
     skip_patterns = [
         'Business Applications',
         'Source: IS Department API Group',
-        'Page 1 of', 'Page 2 of', 'Page 3 of',
-        'Page 4 of', 'Page 5 of', 'Page 6 of',
-        'Page 7 of', 'Page 8 of', 'Page 9 of',
         'Continue of',
-        'Click here to learn more about selection screens',
+        'Click here to learn more',
         'Excel Help for AS400',
     ]
+    page_pattern = re.compile(r'Page \d+ of \d+')
 
-    for line in lines:
+    # Strip non-latin unicode garbage (checkbox symbols, box-drawing chars, etc.)
+    # Keep ASCII, extended Latin, en/em dashes, and smart quotes
+    text = re.sub(r'[^\x00-\x7F\u00C0-\u024F\u2013\u2014\u2018\u2019\u201C\u201D]', '', text)
+
+    cleaned = []
+    for line in text.split('\n'):
         line = line.strip()
-        if not line:
-            cleaned.append('')
-            continue
         if any(p in line for p in skip_patterns):
+            continue
+        if page_pattern.search(line):
             continue
         if re.match(r'^\d+/\d+$', line):
             continue
         cleaned.append(line)
 
-    # Remove consecutive blank lines
-    text = '\n'.join(cleaned)
-    text = re.sub(r'\n{3,}', '\n\n', text)
+    # Step 3: reassemble into paragraphs
+    paragraphs = []
+    current: list = []
 
-    # Now convert to markdown structure
-    output = []
-    lines = text.split('\n')
-    i = 0
+    def _flush() -> None:
+        para = ' '.join(current).strip()
+        if para:
+            paragraphs.append(para)
+        current.clear()
 
-    while i < len(lines):
-        line = lines[i]
-
+    def _starts_new_paragraph(line: str, prev: str) -> bool:
         if not line:
-            output.append('')
-            i += 1
-            continue
-
-        # Figure references — replace with image tag
-        fig_match = re.match(
-            r'^(Figure\s+(\d+))[:\s\-]*(.*)?$',
-            line, re.IGNORECASE
-        )
-        if fig_match:
-            fig_num = fig_match.group(2)
-            fig_key = f"Figure {fig_num}"
-            caption = fig_match.group(3).strip()
-            if fig_key in image_map:
-                img_url = image_map[fig_key]
-                cap_text = caption if caption else fig_key
-                output.append(f'\n![{cap_text}]({img_url})\n')
-            i += 1
-            continue
-
-        # Numbered steps: "1.", "2.", "3." etc
-        num_match = re.match(r'^(\d+)\.\s+(.+)$', line)
-        if num_match:
-            output.append(f'{num_match.group(1)}. {num_match.group(2)}')
-            i += 1
-            continue
-
-        # -OR- separators
+            return True
+        if re.match(r'^\d+[\. ]', line):
+            return True
+        if re.match(r'^\[FIGURE_\d+\]$', line):
+            return True
         if line == '-OR-':
-            output.append('\n*or*\n')
-            i += 1
-            continue
+            return True
+        if prev.endswith('.') and line and line[0].isupper():
+            return True
+        return False
 
-        # Bullet points starting with filled square or dash
-        if line.startswith('▪') or line.startswith('■'):
-            output.append(f'- {line[1:].strip()}')
-            i += 1
-            continue
-
-        # Section headings: short lines, title case, no period
-        if (len(line) < 80
-                and not line.endswith('.')
-                and not line.endswith(',')
-                and not line[0].isdigit()
-                and not line.startswith('-')
-                and sum(1 for c in line if c.isupper()) > 1):
-            output.append(f'\n## {line}\n')
-            i += 1
-            continue
-
-        output.append(line)
+    prev_line = ''
+    i = 0
+    while i < len(cleaned):
+        line = cleaned[i]
+        # Fix 1: short numbered line ("5.") — merge with next non-empty line
+        if re.match(r'^\d+\.$', line.strip()) and len(line.strip()) < 10:
+            j = i + 1
+            while j < len(cleaned) and not cleaned[j].strip():
+                j += 1
+            if j < len(cleaned):
+                line = line.strip() + ' ' + cleaned[j].strip()
+                i = j  # skip the consumed line
+        if _starts_new_paragraph(line, prev_line):
+            _flush()
+            if line:
+                current.append(line)
+        else:
+            current.append(line)
+        prev_line = line
         i += 1
+    _flush()
 
-    return '\n'.join(output)
+    # Step 4: convert paragraphs to HTML
+    # Fix 4: shared set to deduplicate figures across both block and inline passes
+    rendered_figures: set = set()
+
+    def _figure_tag(n: str) -> str:
+        if n in rendered_figures:
+            return ''
+        fig_key = f"Figure {n}"
+        entry = image_map.get(fig_key)
+        if not entry:
+            return ''
+        rendered_figures.add(n)
+        url = entry["url"] if isinstance(entry, dict) else entry
+        return (
+            f'<figure style="margin:24px 0;">'
+            f'<img src="{url}" alt="Figure {n}" '
+            f'style="max-width:100%;border-radius:8px;border:1px solid #e5e7eb;" />'
+            f'</figure>'
+        )
+
+    output = []
+    for para in paragraphs:
+        if not para:
+            continue
+
+        fig_match = re.match(r'^\[FIGURE_(\d+)\]$', para)
+        if fig_match:
+            tag = _figure_tag(fig_match.group(1))
+            if tag:
+                output.append(tag)
+            continue
+
+        num_match = re.match(r'^(\d+)[\. ]\s*(.+)$', para)
+        if num_match:
+            output.append(f'<p><strong>{num_match.group(1)}.</strong> {num_match.group(2)}</p>')
+            continue
+
+        if para == '-OR-':
+            output.append('<p><em>— or —</em></p>')
+            continue
+
+        if len(para) < 60 and not para.endswith('.'):
+            output.append(f'<h2>{para}</h2>')
+            continue
+
+        output.append(f'<p>{para}</p>')
+
+    html = '\n'.join(output)
+
+    # Step 5: replace any remaining inline [FIGURE_N] (dedup shared via rendered_figures)
+    def _replace_inline(m: re.Match) -> str:
+        return _figure_tag(m.group(1))
+
+    html = re.sub(r'\[FIGURE_(\d+)\]', _replace_inline, html)
+
+    return html
 
 
 
@@ -265,7 +308,7 @@ async def ingest_file(
     rules_extracted = len(state["extracted_rules"])
 
     # Step 2: Article conversion
-    article_content = convert_to_markdown(doc.raw_text, doc.images)
+    article_content = convert_to_html(doc.raw_text, doc.images)
 
     # Step 3: Decide what to save
     if rules_extracted == 0:
@@ -372,7 +415,7 @@ def ingest_text(body: IngestTextRequest):
     rules_extracted = len(state["extracted_rules"])
 
     # Step 2: Article conversion
-    article_content = convert_to_markdown(doc.raw_text, {})
+    article_content = convert_to_html(doc.raw_text, {})
 
     # Step 3: Decide what to save
     if rules_extracted == 0:
