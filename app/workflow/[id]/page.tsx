@@ -84,6 +84,7 @@ export default function WorkflowPage() {
   const [validatingRule, setValidatingRule] = useState<string | null>(null);
   const [validatorInput, setValidatorInput] = useState("");
   const [confirmingDeleteWorkflow, setConfirmingDeleteWorkflow] = useState(false);
+  const [confirmingDeleteRule, setConfirmingDeleteRule] = useState<string | null>(null);
   const [deleteWorkflowLoading, setDeleteWorkflowLoading] = useState(false);
   const [deleteWorkflowError, setDeleteWorkflowError] = useState("");
   const [view, setView] = useState<"overview" | "rules">("overview");
@@ -137,6 +138,15 @@ export default function WorkflowPage() {
     } finally {
       setNarrativeLoading(false);
     }
+  }
+
+  async function handleDeleteRule(ruleId: string) {
+    await fetch(`/api/rules/${ruleId}`, { method: "DELETE" });
+    setConfirmingDeleteRule(null);
+    setWorkflow((wf) => {
+      if (!wf) return wf;
+      return { ...wf, rules: wf.rules.filter((r) => r.id !== ruleId) };
+    });
   }
 
   async function handleDeleteWorkflow() {
@@ -265,7 +275,7 @@ export default function WorkflowPage() {
               <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 6 }}>
                 {workflow.rules.length} rules · {workflow.rules.filter((r) => r.stakeholder_validated || validatedRules.has(r.id)).length} validated
               </div>
-              {me && ["editor", "admin"].includes(me.role) && workflow.rules.length === 0 && (
+              {me && ["editor", "admin", "developer"].includes(me.role) && workflow.rules.length === 0 && (
                 <div style={{ marginTop: 10 }}>
                   {confirmingDeleteWorkflow ? (
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
@@ -357,7 +367,7 @@ export default function WorkflowPage() {
                     Generated from {workflow.rules.length} documented rule{workflow.rules.length !== 1 ? "s" : ""}.{" "}
                     Last updated {relativeTime(workflow.narrative_generated_at)}.
                   </span>
-                  {me && ["editor", "admin"].includes(me.role) && (
+                  {me && ["editor", "admin", "developer"].includes(me.role) && (
                     <button
                       onClick={handleRegenerateNarrative}
                       disabled={narrativeLoading}
@@ -376,7 +386,7 @@ export default function WorkflowPage() {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 12 }}>
                 <p style={{ fontSize: 13, color: "var(--muted)" }}>No overview generated yet.</p>
-                {me && ["editor", "admin"].includes(me.role) && (
+                {me && ["editor", "admin", "developer"].includes(me.role) && (
                   <button
                     onClick={handleRegenerateNarrative}
                     disabled={narrativeLoading}
@@ -447,7 +457,7 @@ export default function WorkflowPage() {
                         )}
 
                         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-                          {!isValidated && ["validator", "editor", "admin"].includes(me?.role ?? "") && (
+                          {!isValidated && ["validator", "editor", "admin", "developer"].includes(me?.role ?? "") && (
                             isEnteringName ? (
                               <>
                                 <input
@@ -495,7 +505,7 @@ export default function WorkflowPage() {
                             )
                           )}
 
-                          {["validator", "editor", "admin"].includes(me?.role ?? "") && (
+                          {["validator", "editor", "admin", "developer"].includes(me?.role ?? "") && (
                             <button
                               onClick={() => handleFlag(rule)}
                               disabled={flaggedRules.has(rule.id) || flaggingRule === rule.id}
@@ -510,6 +520,33 @@ export default function WorkflowPage() {
                             >
                               {flaggedRules.has(rule.id) ? "Flagged" : flaggingRule === rule.id ? "Flagging…" : "Flag as outdated"}
                             </button>
+                          )}
+
+                          {["validator", "editor", "admin", "developer"].includes(me?.role ?? "") && (
+                            confirmingDeleteRule === rule.id ? (
+                              <>
+                                <span style={{ fontSize: 11, color: "var(--muted)" }}>Are you sure?</span>
+                                <button
+                                  onClick={() => handleDeleteRule(rule.id)}
+                                  style={{ fontSize: 12, padding: "5px 14px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", cursor: "pointer" }}
+                                >
+                                  Confirm
+                                </button>
+                                <button
+                                  onClick={() => setConfirmingDeleteRule(null)}
+                                  style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, border: "1px solid var(--card-border)", background: "none", color: "var(--muted)", cursor: "pointer" }}
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmingDeleteRule(rule.id)}
+                                style={{ fontSize: 12, padding: "5px 14px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", cursor: "pointer" }}
+                              >
+                                Delete
+                              </button>
+                            )
                           )}
                         </div>
                       </div>

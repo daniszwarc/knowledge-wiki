@@ -151,7 +151,7 @@ async function migrate() {
         email         TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
         role          TEXT NOT NULL DEFAULT 'viewer'
-          CHECK (role IN ('viewer', 'validator', 'editor', 'admin')),
+          CHECK (role IN ('viewer', 'validator', 'editor', 'admin', 'developer')),
         totp_secret   TEXT,
         totp_enabled  BOOLEAN DEFAULT false,
         created_at    TIMESTAMPTZ DEFAULT now(),
@@ -228,6 +228,13 @@ async function migrate() {
       ALTER TABLE articles ADD COLUMN IF NOT EXISTS
         article_type text DEFAULT 'how_to_guide'
         CHECK (article_type IN ('how_to_guide', 'training_material'))
+    `);
+
+    // Expand role CHECK constraint to include 'developer'
+    await client.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`);
+    await client.query(`
+      ALTER TABLE users ADD CONSTRAINT users_role_check
+        CHECK (role IN ('viewer', 'validator', 'editor', 'admin', 'developer'))
     `);
 
     // Clear existing articles

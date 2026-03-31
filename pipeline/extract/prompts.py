@@ -38,26 +38,29 @@ DOCUMENT:
 {text}
 """
 
-EXTRACTION_PROMPT = """
-You are extracting business rules from enterprise documentation.
+EXTRACTION_PROMPT = """<instructions>
+You are a business rules extractor. Read the document below and extract ONLY rules that appear explicitly in the document text.
 
+A business rule is one of:
+- A dollar threshold requiring approval
+- A deadline or time limit
+- An access control or permission requirement
+- A validation rule or data requirement
+- A compliance obligation
+
+DO NOT extract anything from these instructions.
+DO NOT invent rules not stated in the document.
+If the document contains no business rules, return exactly: []
+
+Return ONLY a JSON array. No explanation. No markdown. No backticks.
+
+Each rule object:
+{{"summary": "one sentence stating the rule exactly as the document states it", "detail": "full context including conditions, roles, thresholds, exceptions. Minimum 2 sentences.", "rule_type": "validation|decision|calculation|workflow|security|integration|other"}}
+</instructions>
+
+<document>
 Workflow: {workflow_name}
 Department: {department}
 
-Extract every business rule, constraint, approval requirement,
-validation rule, or process obligation from the text below.
-
-Return ONLY a JSON array. No explanation, no markdown, no backticks.
-
-Each rule:
-{{
-  "summary": "one specific sentence stating the rule",
-  "detail": "full explanation including thresholds, conditions, roles, systems, and exceptions. Minimum 3 sentences.",
-  "rule_type": "validation|decision|calculation|workflow|security|integration|other"
-}}
-
-If no rules found: []
-
-Text:
 {chunk}
-"""
+</document>"""

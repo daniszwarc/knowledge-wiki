@@ -52,13 +52,13 @@ export async function middleware(req: NextRequest) {
   }
 
   // Role-based path guards
-  if (ADMIN_PATHS.some((p) => pathname.startsWith(p)) && session.role !== "admin") {
+  if (ADMIN_PATHS.some((p) => pathname.startsWith(p)) && !["admin", "developer"].includes(session.role)) {
     return NextResponse.redirect(new URL("/", req.url));
   }
 
   if (
     VALIDATOR_PATHS.some((p) => pathname === p || pathname.startsWith(p)) &&
-    !["validator", "editor", "admin"].includes(session.role)
+    !["validator", "editor", "admin", "developer"].includes(session.role)
   ) {
     return NextResponse.redirect(new URL("/", req.url));
   }

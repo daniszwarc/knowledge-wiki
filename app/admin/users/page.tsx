@@ -11,7 +11,7 @@ interface User {
   created_at: string;
 }
 
-const ROLES = ["viewer", "validator", "editor", "admin"];
+const ROLES = ["viewer", "validator", "editor", "admin", "developer"];
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
