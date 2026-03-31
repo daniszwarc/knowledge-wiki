@@ -9,12 +9,13 @@ function getClient() {
 
 export async function chat(
   messages: OpenAI.Chat.ChatCompletionMessageParam[],
-  systemPrompt: string
+  systemPrompt: string,
+  model?: string
 ): Promise<ReadableStream<Uint8Array>> {
   const client = getClient();
 
   const stream = await client.chat.completions.create({
-    model: process.env.OLLAMA_CHAT_MODEL ?? "llama3.2",
+    model: model ?? process.env.OLLAMA_CHAT_MODEL ?? "qwen2.5:3b",
     messages: [{ role: "system", content: systemPrompt }, ...messages],
     stream: true,
   });

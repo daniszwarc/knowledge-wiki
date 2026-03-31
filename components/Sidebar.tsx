@@ -363,6 +363,11 @@ export function Sidebar({
             Admin
           </a>
         )}
+        {(me?.role === "admin" || me?.role === "developer") && (
+          <a href="/audit" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
+            Audit Log
+          </a>
+        )}
         {me && (
           <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--sidebar-border)" }}>
             <p style={{ fontSize: 11, color: "var(--muted-light)", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

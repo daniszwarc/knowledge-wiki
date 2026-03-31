@@ -210,8 +210,8 @@ def convert_to_html(raw_text: str, image_map: dict) -> str:
             output.append(f'<p><strong>{num_match.group(1)}.</strong> {num_match.group(2)}</p>')
             continue
 
-        if para == '-OR-':
-            output.append('<p><em>— or —</em></p>')
+        if re.match(r'^-\s*[Oo][Rr]-$', para):
+            output.append('<p style="margin-left: 16px; color: var(--muted); font-style: italic;">— or —</p>')
             continue
 
         if len(para) < 60 and not para.endswith('.'):

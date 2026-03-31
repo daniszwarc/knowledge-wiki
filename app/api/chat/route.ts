@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { query } from "@/lib/db";
 import { chat } from "@/lib/ollama";
 
+const CHAT_MODEL = process.env.OLLAMA_CHAT_MODEL ?? "qwen2.5:3b";
+
 const INJECTION_WORDS = [
   "override", "restraint", "constraint", "programmed", "jailbreak",
   "pretend", "recipe", "ignore", "forget", "instead", "disregard",
@@ -74,19 +76,25 @@ export async function POST(req: NextRequest) {
     }
 
     if (!workflowId) {
-      const systemPrompt =
-        "You are a process discovery assistant. Using ONLY the documented content below, " +
-        "answer the user's question and guide them to the right place.\n\n" +
-        "Rules:\n" +
-        "- If a DEPARTMENT name matches the query, mention it first and list all its workflows and articles\n" +
-        "- For each relevant item, state its name, one sentence on what it covers, and its link\n" +
-        "- Format links as bare paths: /workflow/[id] or /article/[id] — the UI renders them as clickable links\n" +
-        "- List every relevant item found — do not omit any\n" +
-        "- If nothing matches, say exactly: We do not have documented information about that yet.\n" +
-        "- Do not add phrases like 'Let me know if you need further assistance', 'I hope this helps', or any conversational filler. Answer directly and stop.\n\n" +
-        "DOCUMENTED CONTENT:\n" +
-        (context ?? "No relevant content found.");
-      const stream = await chat(messages, systemPrompt);
+      let systemPrompt: string;
+      if (context) {
+        systemPrompt =
+          "Answer the question using ONLY the document below. Be brief and direct — 2-3 sentences maximum. Quote the relevant part of the document. Do not analyze, interpret, caveat, or add any information not explicitly stated. If the document does not answer the question, say: 'This is not covered in this document.' Read the full conversation to resolve follow-up questions.\n\nDOCUMENT:\n" + context;
+      } else {
+        systemPrompt =
+          "You are a process discovery assistant. Using ONLY the documented content below, " +
+          "answer the user's question and guide them to the right place.\n\n" +
+          "Rules:\n" +
+          "- If a DEPARTMENT name matches the query, mention it first and list all its workflows and articles\n" +
+          "- For each relevant item, state its name, one sentence on what it covers, and its link\n" +
+          "- Format links as bare paths: /workflow/[id] or /article/[id] — the UI renders them as clickable links\n" +
+          "- List every relevant item found — do not omit any\n" +
+          "- If nothing matches, say exactly: We do not have documented information about that yet.\n" +
+          "- Do not add phrases like 'Let me know if you need further assistance', 'I hope this helps', or any conversational filler. Answer directly and stop.\n\n" +
+          "DOCUMENTED CONTENT:\n" +
+          "No relevant content found.";
+      }
+      const stream = await chat(messages, systemPrompt, CHAT_MODEL);
       return new Response(stream, {
         headers: {
           "Content-Type": "text/plain; charset=utf-8",
@@ -126,7 +134,7 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = `${WORKFLOW_PROMPT_TEMPLATE.replace("[owner_name]", topOwner)}\n\n=== DOCUMENTED RULES — YOUR ONLY SOURCE OF TRUTH ===\n${rulesContext}\n=== END OF DOCUMENTED RULES ===`;
 
-    const stream = await chat(messages, systemPrompt);
+    const stream = await chat(messages, systemPrompt, CHAT_MODEL);
 
     return new Response(stream, {
       headers: {
