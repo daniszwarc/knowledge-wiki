@@ -63,7 +63,11 @@ export async function GET(
     if (!workflow) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    return NextResponse.json(workflow);
+    const narrativeRows = await query<{ process_narrative: string | null; narrative_generated_at: string | null }>(
+      `SELECT process_narrative, narrative_generated_at FROM workflows WHERE id = $1`,
+      [id]
+    );
+    return NextResponse.json({ ...workflow, ...narrativeRows[0] });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

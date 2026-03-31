@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Sidebar } from "@/components/Sidebar";
@@ -89,6 +90,10 @@ export default function WorkflowPage() {
   const [deleteWorkflowError, setDeleteWorkflowError] = useState("");
   const [view, setView] = useState<"overview" | "rules">("overview");
   const [narrativeLoading, setNarrativeLoading] = useState(false);
+  const [fetchKey, setFetchKey] = useState(0);
+  const [narrativeEditing, setNarrativeEditing] = useState(false);
+  const [narrativeEditText, setNarrativeEditText] = useState("");
+  const [narrativeSaving, setNarrativeSaving] = useState(false);
   const [refArticles, setRefArticles] = useState<RefArticle[]>([]);
 
 
@@ -98,10 +103,23 @@ export default function WorkflowPage() {
       .then((data) => { if (data) setMe(data); });
   }, []);
 
+  // Re-fetch when restored from bfcache (browser back from hard-navigated pages)
   useEffect(() => {
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) setFetchKey((k) => k + 1);
+    };
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    setLoading(true);
+    setWorkflow(null);
     Promise.all([
-      fetch(`/api/workflows/${id}`).then((r) => r.json()),
-      fetch("/api/articles").then((r) => r.json()),
+      fetch(`/api/workflows/${id}`, { cache: "no-store", signal }).then((r) => r.json()),
+      fetch("/api/articles", { signal }).then((r) => r.json()),
     ]).then(([wf, articles]: [Workflow, RefArticle[]]) => {
       setWorkflow(wf);
       if (Array.isArray(articles)) {
@@ -110,13 +128,17 @@ export default function WorkflowPage() {
         ));
       }
       setLoading(false);
+    }).catch((err: Error) => {
+      if (err.name !== "AbortError") setLoading(false);
     });
 
     // highlight from URL hash
     if (window.location.hash) {
       setHighlightedRule(window.location.hash.replace("#", ""));
     }
-  }, [id]);
+
+    return () => controller.abort();
+  }, [id, fetchKey]);
 
   const rulesByType = workflow
     ? workflow.rules.reduce<Record<string, Rule[]>>((acc, r) => {
@@ -126,6 +148,24 @@ export default function WorkflowPage() {
         return acc;
       }, {})
     : {};
+
+  async function handleSaveNarrative() {
+    setNarrativeSaving(true);
+    try {
+      const res = await fetch(`/api/workflows/${id}/narrative`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ narrative: narrativeEditText }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWorkflow((wf) => wf ? { ...wf, process_narrative: data.narrative, narrative_generated_at: data.generated_at } : wf);
+        setNarrativeEditing(false);
+      }
+    } finally {
+      setNarrativeSaving(false);
+    }
+  }
 
   async function handleRegenerateNarrative() {
     setNarrativeLoading(true);
@@ -245,9 +285,9 @@ export default function WorkflowPage() {
 
         {/* Page header */}
         <div style={{ padding: "28px 32px 20px", borderBottom: "1px solid var(--sidebar-border)" }}>
-          <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--muted)", textDecoration: "none", marginBottom: 14 }}>
+          <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--muted)", textDecoration: "none", marginBottom: 14 }}>
             <span>←</span> All workflows
-          </a>
+          </Link>
 
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
             <div>
@@ -348,45 +388,98 @@ export default function WorkflowPage() {
           <div style={{ padding: "28px 32px 40px", maxWidth: 720 }}>
             {workflow.process_narrative ? (
               <>
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    h2: ({ children }) => <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--foreground)", marginTop: 28, marginBottom: 10, letterSpacing: "-0.01em" }}>{children}</h2>,
-                    h3: ({ children }) => <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", marginTop: 20, marginBottom: 8 }}>{children}</h3>,
-                    p: ({ children }) => <p style={{ fontSize: 13, color: "var(--foreground)", lineHeight: 1.75, marginBottom: 14 }}>{children}</p>,
-                    ul: ({ children }) => <ul style={{ marginLeft: 20, marginBottom: 14, listStyleType: "disc" }}>{children}</ul>,
-                    ol: ({ children }) => <ol style={{ marginLeft: 20, marginBottom: 14 }}>{children}</ol>,
-                    li: ({ children }) => <li style={{ fontSize: 13, color: "var(--foreground)", lineHeight: 1.7, marginBottom: 4 }}>{children}</li>,
-                    strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
-                  }}
-                >
-                  {workflow.process_narrative}
-                </ReactMarkdown>
-                <div style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 14 }}>
-                  <span style={{ fontSize: 11, color: "var(--muted-light)" }}>
-                    Generated from {workflow.rules.length} documented rule{workflow.rules.length !== 1 ? "s" : ""}.{" "}
-                    Last updated {relativeTime(workflow.narrative_generated_at)}.
-                  </span>
-                  {me && ["editor", "admin", "developer"].includes(me.role) && (
-                    <button
-                      onClick={handleRegenerateNarrative}
-                      disabled={narrativeLoading}
+                {narrativeEditing ? (
+                  <>
+                    <textarea
+                      value={narrativeEditText}
+                      onChange={(e) => setNarrativeEditText(e.target.value)}
                       style={{
-                        fontSize: 11, padding: "3px 10px", borderRadius: 6,
-                        border: "1px solid var(--card-border)", background: "none",
-                        color: "var(--muted)", cursor: narrativeLoading ? "not-allowed" : "pointer",
-                        opacity: narrativeLoading ? 0.5 : 1,
+                        width: "100%", minHeight: 200, fontSize: 13, lineHeight: 1.75,
+                        color: "var(--foreground)", border: "1px solid var(--card-border)",
+                        borderRadius: 8, padding: "12px 14px", background: "var(--card-bg)",
+                        fontFamily: "inherit", resize: "vertical", boxSizing: "border-box",
+                      }}
+                    />
+                    <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+                      <button
+                        onClick={handleSaveNarrative}
+                        disabled={narrativeSaving}
+                        style={{
+                          fontSize: 12, padding: "5px 16px", borderRadius: 7,
+                          border: "1px solid #86efac", background: "#f0fdf4", color: "#15803d",
+                          cursor: narrativeSaving ? "not-allowed" : "pointer",
+                          opacity: narrativeSaving ? 0.5 : 1, fontWeight: 500,
+                        }}
+                      >
+                        {narrativeSaving ? "Saving…" : "Save"}
+                      </button>
+                      <button
+                        onClick={() => setNarrativeEditing(false)}
+                        style={{
+                          fontSize: 12, padding: "5px 14px", borderRadius: 7,
+                          border: "1px solid var(--card-border)", background: "none",
+                          color: "var(--muted)", cursor: "pointer",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        h2: ({ children }) => <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--foreground)", marginTop: 28, marginBottom: 10, letterSpacing: "-0.01em" }}>{children}</h2>,
+                        h3: ({ children }) => <h3 style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", marginTop: 20, marginBottom: 8 }}>{children}</h3>,
+                        p: ({ children }) => <p style={{ fontSize: 13, color: "var(--foreground)", lineHeight: 1.75, marginBottom: 14 }}>{children}</p>,
+                        ul: ({ children }) => <ul style={{ marginLeft: 20, marginBottom: 14, listStyleType: "disc" }}>{children}</ul>,
+                        ol: ({ children }) => <ol style={{ marginLeft: 20, marginBottom: 14 }}>{children}</ol>,
+                        li: ({ children }) => <li style={{ fontSize: 13, color: "var(--foreground)", lineHeight: 1.7, marginBottom: 4 }}>{children}</li>,
+                        strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
                       }}
                     >
-                      {narrativeLoading ? "Regenerating…" : "Regenerate"}
-                    </button>
-                  )}
-                </div>
+                      {workflow.process_narrative}
+                    </ReactMarkdown>
+                    <div style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 11, color: "var(--muted-light)" }}>
+                        Generated from {workflow.rules.length} documented rule{workflow.rules.length !== 1 ? "s" : ""}.{" "}
+                        Last updated {relativeTime(workflow.narrative_generated_at)}.
+                      </span>
+                      {me && ["validator", "editor", "admin", "developer"].includes(me.role) && (
+                        <>
+                          <button
+                            onClick={() => { setNarrativeEditText(workflow.process_narrative ?? ""); setNarrativeEditing(true); }}
+                            style={{
+                              fontSize: 11, padding: "3px 10px", borderRadius: 6,
+                              border: "1px solid var(--card-border)", background: "none",
+                              color: "var(--muted)", cursor: "pointer",
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={handleRegenerateNarrative}
+                            disabled={narrativeLoading}
+                            style={{
+                              fontSize: 11, padding: "3px 10px", borderRadius: 6,
+                              border: "1px solid var(--card-border)", background: "none",
+                              color: "var(--muted)", cursor: narrativeLoading ? "not-allowed" : "pointer",
+                              opacity: narrativeLoading ? 0.5 : 1,
+                            }}
+                          >
+                            {narrativeLoading ? "Regenerating…" : "Regenerate"}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
               </>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 12 }}>
                 <p style={{ fontSize: 13, color: "var(--muted)" }}>No overview generated yet.</p>
-                {me && ["editor", "admin", "developer"].includes(me.role) && (
+                {me && ["validator", "editor", "admin", "developer"].includes(me.role) && (
                   <button
                     onClick={handleRegenerateNarrative}
                     disabled={narrativeLoading}
@@ -616,7 +709,7 @@ export default function WorkflowPage() {
             </h2>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {refArticles.map((a) => (
-                <a
+                <Link
                   key={a.id}
                   href={`/article/${a.id}`}
                   style={{
@@ -643,7 +736,7 @@ export default function WorkflowPage() {
                       Validated
                     </span>
                   )}
-                </a>
+                </Link>
               ))}
             </div>
           </div>

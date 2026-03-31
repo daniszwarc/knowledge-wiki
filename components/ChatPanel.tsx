@@ -22,11 +22,19 @@ export function ChatPanel({
   >([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
+
+  useEffect(() => {
+    if (isThinking && chatBottomRef.current) {
+      chatBottomRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [isThinking]);
 
   async function handleChat(e: { preventDefault(): void }) {
     e.preventDefault();
@@ -36,6 +44,7 @@ export function ChatPanel({
     const next = [...chatMessages, { role: "user" as const, content: userMsg }];
     setChatMessages(next);
     setChatLoading(true);
+    setIsThinking(true);
 
     let assistantText = "";
     try {
@@ -52,6 +61,7 @@ export function ChatPanel({
       const decoder = new TextDecoder();
       if (!reader) return;
 
+      setIsThinking(false);
       setChatMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
       while (true) {
@@ -65,6 +75,7 @@ export function ChatPanel({
       }
     } finally {
       setChatLoading(false);
+      setIsThinking(false);
     }
   }
 
@@ -228,6 +239,23 @@ export function ChatPanel({
           </div>
         ))}
         <div ref={chatEndRef} />
+        {isThinking && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", marginTop: 8 }}>
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--muted)", display: "inline-block", animation: "bounce 1.2s infinite ease-in-out", animationDelay: "0s" }} />
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--muted)", display: "inline-block", animation: "bounce 1.2s infinite ease-in-out", animationDelay: "0.2s" }} />
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--muted)", display: "inline-block", animation: "bounce 1.2s infinite ease-in-out", animationDelay: "0.4s" }} />
+            </div>
+            <span style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>Thinking…</span>
+          </div>
+        )}
+        <div ref={chatBottomRef} />
+        <style>{`
+          @keyframes bounce {
+            0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+            40% { transform: translateY(-6px); opacity: 1; }
+          }
+        `}</style>
       </div>
 
       {/* Input */}
