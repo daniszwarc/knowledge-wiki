@@ -37,6 +37,10 @@ export async function GET(
       it_design_images: string[] | null;
       unit_testing_images: string[] | null;
       acceptance_testing_images: string[] | null;
+      business_requirements_content: { type: string; value: string }[] | null;
+      it_design_content: { type: string; value: string }[] | null;
+      unit_testing_content: { type: string; value: string }[] | null;
+      acceptance_testing_content: { type: string; value: string }[] | null;
     }>(
       `SELECT id, ticket_number, project_title, department, author, date,
               affected_systems, business_requirements, it_design, unit_testing,
@@ -44,7 +48,9 @@ export async function GET(
               inc_ticket, cab_ticket, story_number, td_oms_task,
               requestor, programmer, contributors, approved_by, company,
               business_requirements_images, it_design_images,
-              unit_testing_images, acceptance_testing_images
+              unit_testing_images, acceptance_testing_images,
+              business_requirements_content, it_design_content,
+              unit_testing_content, acceptance_testing_content
        FROM seds WHERE id = $1`,
       [id]
     );

@@ -34,6 +34,10 @@ interface Sed {
   it_design_images: string[] | null;
   unit_testing_images: string[] | null;
   acceptance_testing_images: string[] | null;
+  business_requirements_content: { type: string; value: string }[] | null;
+  it_design_content: { type: string; value: string }[] | null;
+  unit_testing_content: { type: string; value: string }[] | null;
+  acceptance_testing_content: { type: string; value: string }[] | null;
 }
 
 const TABS = [
@@ -123,6 +127,29 @@ export default function SedPage() {
 
   const activeContent = sed[activeTab];
   const activeImages = sed[`${activeTab}_images` as keyof Sed] as string[] | null;
+  const activeContentItems = sed[`${activeTab}_content` as keyof Sed] as { type: string; value: string }[] | null;
+
+  function renderContent(items: { type: string; value: string }[]) {
+    return items.map((item, i) => {
+      if (item.type === "image") {
+        return (
+          <figure key={i} style={{ margin: "16px 0" }}>
+            <img
+              src={item.value}
+              alt="Screenshot"
+              style={{ maxWidth: "100%", borderRadius: 8, border: "1px solid #e5e7eb", cursor: "pointer" }}
+              onClick={() => window.open(item.value, "_blank")}
+            />
+          </figure>
+        );
+      }
+      return (
+        <p key={i} style={{ marginBottom: 8, fontSize: 14, color: "var(--foreground)", lineHeight: 1.7 }}>
+          {item.value}
+        </p>
+      );
+    });
+  }
 
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden", background: "var(--background)", fontFamily: "var(--font-geist-sans), system-ui, sans-serif" }}>
@@ -226,24 +253,28 @@ export default function SedPage() {
             className="article-prose"
             style={{ lineHeight: 1.8, color: "var(--foreground)", fontSize: 15, minHeight: 120 }}
           >
-            {activeContent ? (
-              <p style={{ whiteSpace: "pre-wrap" }}>{activeContent}</p>
+            {activeContentItems && activeContentItems.length > 0 ? (
+              renderContent(activeContentItems)
+            ) : activeContent ? (
+              <>
+                <p style={{ whiteSpace: "pre-wrap" }}>{activeContent}</p>
+                {activeImages && activeImages.length > 0 && (
+                  <div>
+                    {activeImages.map((url, i) => (
+                      <figure key={i} style={{ margin: "24px 0" }}>
+                        <img
+                          src={url}
+                          alt="Screenshot"
+                          style={{ maxWidth: "100%", borderRadius: "8px", border: "1px solid #e5e7eb", cursor: "pointer" }}
+                          onClick={() => window.open(url, "_blank")}
+                        />
+                      </figure>
+                    ))}
+                  </div>
+                )}
+              </>
             ) : (
               <p style={{ color: "var(--muted-light)", fontStyle: "italic" }}>Not documented</p>
-            )}
-            {activeImages && activeImages.length > 0 && (
-              <div>
-                {activeImages.map((url, i) => (
-                  <figure key={i} style={{ margin: "24px 0" }}>
-                    <img
-                      src={url}
-                      alt="Screenshot"
-                      style={{ maxWidth: "100%", borderRadius: "8px", border: "1px solid #e5e7eb", cursor: "pointer" }}
-                      onClick={() => window.open(url, "_blank")}
-                    />
-                  </figure>
-                ))}
-              </div>
             )}
           </div>
 

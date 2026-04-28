@@ -574,12 +574,39 @@ def extract_sed_data(data: bytes, job_id: Optional[str] = None, upload_dir: Opti
     current_section = None
     in_content_zone = False
     title_found = False
-    section_lines = {k: [] for k in ["business_requirements", "it_design", "unit_testing", "acceptance_testing"]}
+    section_content: dict = {k: [] for k in ["business_requirements", "it_design", "unit_testing", "acceptance_testing"]}
     img_counter = 1
-    section_images = {k: [] for k in ["business_requirements", "it_design", "unit_testing", "acceptance_testing"]}
 
     for para in paragraphs:
         text = para.text.strip()
+
+        # Image extraction runs before the empty-text guard so that image-only
+        # paragraphs (para.text == "") are not skipped.
+        if current_section and in_content_zone and upload_dir and job_id:
+            drawings = para._element.findall('.//' + qn('w:drawing'), para._element.nsmap)
+            for drawing in drawings:
+                blips = drawing.findall('.//' + qn('a:blip'), drawing.nsmap)
+                for blip in blips:
+                    embed = blip.get(qn('r:embed'))
+                    if embed and embed in doc.part.rels:
+                        rel = doc.part.rels[embed]
+                        if 'image' in rel.reltype:
+                            try:
+                                img_data = rel.target_part.blob
+                                ct = rel.target_part.content_type
+                                img_ext = 'jpg' if 'jpeg' in ct else ct.split('/')[-1]
+                                img_filename = f"figure_{img_counter}.{img_ext}"
+                                img_path = upload_dir / img_filename
+                                upload_dir.mkdir(parents=True, exist_ok=True)
+                                img_path.write_bytes(img_data)
+                                print(f"Saving image {img_counter} in section {current_section}")
+                                section_content[current_section].append(
+                                    {"type": "image", "value": f"/uploads/{job_id}/{img_filename}"}
+                                )
+                                img_counter += 1
+                            except Exception:
+                                continue
+
         if not text:
             continue
 
@@ -631,40 +658,23 @@ def extract_sed_data(data: bytes, job_id: Optional[str] = None, upload_dir: Opti
                 continue
             if len(text_clean) < 5:
                 continue
-            section_lines[current_section].append(text_clean)
+            section_content[current_section].append({"type": "text", "value": text_clean})
 
-        if current_section and in_content_zone and upload_dir and job_id:
-            drawings = para._element.findall('.//' + qn('w:drawing'), para._element.nsmap)
-            for drawing in drawings:
-                blips = drawing.findall('.//' + qn('a:blip'), drawing.nsmap)
-                for blip in blips:
-                    embed = blip.get(qn('r:embed'))
-                    if embed and embed in doc.part.rels:
-                        rel = doc.part.rels[embed]
-                        if 'image' in rel.reltype:
-                            try:
-                                img_data = rel.target_part.blob
-                                ct = rel.target_part.content_type
-                                img_ext = 'jpg' if 'jpeg' in ct else ct.split('/')[-1]
-                                img_filename = f"figure_{img_counter}.{img_ext}"
-                                img_path = upload_dir / img_filename
-                                upload_dir.mkdir(parents=True, exist_ok=True)
-                                img_path.write_bytes(img_data)
-                                section_images[current_section].append(
-                                    f"/uploads/{job_id}/{img_filename}"
-                                )
-                                img_counter += 1
-                            except Exception:
-                                continue
-
-    for key in section_lines:
-        content = "\n".join(section_lines[key]).strip()
+    for key in section_content:
+        items = section_content[key]
+        texts = [item["value"] for item in items if item["type"] == "text"]
+        content = "\n".join(texts).strip()
         result[key] = content if content else None
 
-    result["business_requirements_images"] = section_images["business_requirements"]
-    result["it_design_images"] = section_images["it_design"]
-    result["unit_testing_images"] = section_images["unit_testing"]
-    result["acceptance_testing_images"] = section_images["acceptance_testing"]
+    result["business_requirements_images"] = [i["value"] for i in section_content["business_requirements"] if i["type"] == "image"]
+    result["it_design_images"] = [i["value"] for i in section_content["it_design"] if i["type"] == "image"]
+    result["unit_testing_images"] = [i["value"] for i in section_content["unit_testing"] if i["type"] == "image"]
+    result["acceptance_testing_images"] = [i["value"] for i in section_content["acceptance_testing"] if i["type"] == "image"]
+
+    result["business_requirements_content"] = section_content["business_requirements"]
+    result["it_design_content"] = section_content["it_design"]
+    result["unit_testing_content"] = section_content["unit_testing"]
+    result["acceptance_testing_content"] = section_content["acceptance_testing"]
 
     result["author"] = result["requestor"]
     result["department"] = result["company"]

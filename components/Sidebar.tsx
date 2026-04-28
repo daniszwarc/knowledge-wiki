@@ -420,11 +420,29 @@ export function Sidebar({
             {SECTION_SEPARATOR}
 
             {/* ── SEDs ── */}
-            <SectionHeader
-              label="SEDs"
-              open={openSections.seds}
-              onToggle={() => toggleSection("seds")}
-            />
+            <div style={{ display: "flex", alignItems: "center", width: "100%" }}>
+              <a
+                href="/seds"
+                style={{
+                  flex: 1, padding: "9px 0 8px 16px",
+                  fontSize: 12, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase",
+                  color: "var(--foreground)", textDecoration: "none",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                SEDs
+              </a>
+              <button
+                onClick={() => toggleSection("seds")}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  padding: "9px 16px 8px 8px",
+                  display: "flex", alignItems: "center",
+                }}
+              >
+                <ChevronIcon rotated={openSections.seds} />
+              </button>
+            </div>
             {openSections.seds && (
               <>
                 {(() => {

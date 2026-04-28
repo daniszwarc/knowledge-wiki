@@ -14,6 +14,16 @@ const INJECTION_REFUSAL =
   "I can only answer questions about the documented business processes " +
   "for this workflow. Please ask about the rules shown on the left.";
 
+function isCrossSedQuestion(message: string): boolean {
+  const lower = message.toLowerCase();
+  const signals = [
+    "other sed", "other seds", "similar sed", "similar issue", "another sed",
+    "any sed", "related sed", "same issue", "same problem", "seen this before",
+    "other ticket", "other story", "has this happened",
+  ];
+  return signals.some((s) => lower.includes(s));
+}
+
 function isInjectionAttempt(msg: string): boolean {
   const lower = msg.toLowerCase();
 
@@ -55,11 +65,12 @@ const WORKFLOW_PROMPT_TEMPLATE =
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { messages, workflowId, context, sedId } = body as {
+    const { messages, workflowId, context, sedId, sedSearch } = body as {
       messages: { role: "user" | "assistant"; content: string }[];
       workflowId?: string | null;
       context?: string;
       sedId?: string;
+      sedSearch?: boolean;
     };
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -78,17 +89,28 @@ export async function POST(req: NextRequest) {
 
     if (sedId) {
       const sedRows = await query<{
-        ticket_number: string;
+        id: string;
         project_title: string;
-        department: string | null;
-        author: string | null;
+        story_number: string | null;
+        inc_ticket: string | null;
+        cab_ticket: string | null;
+        td_oms_task: string | null;
+        company: string | null;
+        requestor: string | null;
+        programmer: string | null;
+        contributors: string | null;
+        approved_by: string | null;
+        date: string | null;
+        affected_systems: string | null;
         business_requirements: string | null;
         it_design: string | null;
         unit_testing: string | null;
         acceptance_testing: string | null;
       }>(
-        `SELECT ticket_number, project_title, department, author,
-                business_requirements, it_design, unit_testing, acceptance_testing
+        `SELECT id, project_title, story_number, inc_ticket, cab_ticket, td_oms_task,
+                company, requestor, programmer, contributors, approved_by, date,
+                affected_systems, business_requirements, it_design, unit_testing,
+                acceptance_testing
          FROM seds WHERE id = $1`,
         [sedId]
       );
@@ -100,26 +122,142 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      const s = sedRows[0];
-      const sedContext = [
-        `Ticket: ${s.ticket_number}`,
-        `Title: ${s.project_title}`,
-        s.department ? `Department: ${s.department}` : null,
-        s.author ? `Author: ${s.author}` : null,
-        s.business_requirements ? `\n## Business Requirements\n${s.business_requirements}` : null,
-        s.it_design ? `\n## IT Design\n${s.it_design}` : null,
-        s.unit_testing ? `\n## Unit Testing\n${s.unit_testing}` : null,
-        s.acceptance_testing ? `\n## Acceptance Testing\n${s.acceptance_testing}` : null,
-      ]
-        .filter(Boolean)
-        .join("\n");
+      const sed = sedRows[0];
+      const sedContext = `
+SED METADATA:
+- Project title: ${sed.project_title}
+- Story number: ${sed.story_number}
+- Originating ticket: ${sed.inc_ticket ?? 'not specified'}
+- CAB ticket: ${sed.cab_ticket ?? 'not specified'}
+- TD/OMS Task: ${sed.td_oms_task ?? 'not specified'}
+- Company: ${sed.company ?? 'not specified'}
+- Requestor (person who requested the work): ${sed.requestor ?? 'not specified'}
+- Programmer (person who implemented the fix): ${sed.programmer ?? 'not specified'}
+- Contributors: ${sed.contributors ?? 'not specified'}
+- Approved by: ${sed.approved_by ?? 'not specified'}
+- Date: ${sed.date ?? 'not specified'}
+- Affected systems: ${sed.affected_systems ?? 'not specified'}
+
+USER / BUSINESS REQUIREMENTS:
+${sed.business_requirements ?? 'not documented'}
+
+IT DESIGN:
+${sed.it_design ?? 'not documented'}
+
+UNIT TESTING:
+${sed.unit_testing ?? 'not documented'}
+
+QA / ACCEPTANCE TESTING:
+${sed.acceptance_testing ?? 'not documented'}
+`.trim();
+
+      let relatedContext = "";
+      if (isCrossSedQuestion(lastUserMessage)) {
+        try {
+          const words = lastUserMessage.replace(/[^a-zA-Z0-9 ]/g, " ").trim();
+          if (words.length > 0) {
+            type RelatedSed = { id: string; project_title: string; story_number: string | null; inc_ticket: string | null; business_requirements: string | null };
+            const relatedRows = await query<RelatedSed>(
+              `SELECT id, project_title, story_number, inc_ticket,
+                      LEFT(business_requirements, 300) AS business_requirements
+               FROM seds
+               WHERE id != $1
+                 AND to_tsvector('english',
+                   COALESCE(project_title, '') || ' ' ||
+                   COALESCE(business_requirements, '') || ' ' ||
+                   COALESCE(it_design, '')
+                 ) @@ plainto_tsquery('english', $2)
+               ORDER BY ts_rank(
+                 to_tsvector('english',
+                   COALESCE(project_title, '') || ' ' ||
+                   COALESCE(business_requirements, '') || ' ' ||
+                   COALESCE(it_design, '')
+                 ),
+                 plainto_tsquery('english', $2)
+               ) DESC
+               LIMIT 3`,
+              [sedId, words]
+            );
+            if (relatedRows.length > 0) {
+              const relatedLines = relatedRows.map((r, i) =>
+                `SED ${i + 1}: ${r.project_title} (Story: ${r.story_number ?? "N/A"}, Ticket: ${r.inc_ticket ?? "N/A"})\n` +
+                `Business requirements: ${(r.business_requirements ?? "").substring(0, 300)}\n` +
+                `Link: /sed/${r.id}`
+              );
+              relatedContext =
+                "\n\nRELATED SEDs FROM THE WIKI (may be relevant):\n\n" +
+                relatedLines.join("\n\n");
+            }
+          }
+        } catch {
+          // cross-SED search failed gracefully — continue with current SED only
+        }
+      }
+
+      const fullContext = sedContext + relatedContext;
 
       const systemPrompt =
-        "Answer the question using ONLY the SED document below. Be brief and direct — 2-3 sentences maximum. " +
-        "Quote the relevant section directly. Do not analyze, interpret, caveat, or add any information not explicitly stated. " +
-        "If the document does not answer the question, say: 'This is not covered in this SED.' " +
-        "If the question relates to a broader wiki rule or process, note that the user may find related content in the wiki. " +
-        "Read the full conversation to resolve follow-up questions.\n\nSED DOCUMENT:\n" + sedContext;
+        "Answer questions about this SED using ONLY the information below. " +
+        "Be direct and specific. Quote directly when possible. 2-3 sentences maximum. " +
+        "If asked about the programmer, use the Programmer field. " +
+        "If asked about who requested, use the Requestor field. " +
+        (relatedContext
+          ? "If the user asks about other SEDs or similar issues, use the RELATED SEDs section to answer. " +
+            "Include the story number and a link when referencing another SED. " +
+            "Format links as /sed/[id] — the UI renders them as clickable. "
+          : "") +
+        "If the answer is not in the document, say: 'This is not covered in this SED.'\n\n" +
+        fullContext;
+
+      const stream = await chat(messages, systemPrompt, CHAT_MODEL);
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Transfer-Encoding": "chunked",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
+
+    if (sedSearch) {
+      const allSeds = await query<{
+        id: string;
+        project_title: string;
+        story_number: string | null;
+        inc_ticket: string | null;
+        programmer: string | null;
+        requestor: string | null;
+        business_requirements: string | null;
+      }>(
+        `SELECT id, project_title, story_number, inc_ticket, programmer, requestor,
+                LEFT(business_requirements, 200) AS business_requirements
+         FROM seds
+         ORDER BY date DESC NULLS LAST, created_at DESC NULLS LAST`
+      );
+
+      const sedListContext = allSeds
+        .map(
+          (s) =>
+            `SED: ${s.project_title}\n` +
+            `Story: ${s.story_number ?? "N/A"} | Ticket: ${s.inc_ticket ?? "N/A"}\n` +
+            `Programmer: ${s.programmer ?? "N/A"} | Requestor: ${s.requestor ?? "N/A"}\n` +
+            `Issue: ${(s.business_requirements ?? "").substring(0, 200)}\n` +
+            `Link: /sed/${s.id}`
+        )
+        .join("\n\n");
+
+      const systemPrompt =
+        "You are a SED discovery assistant for APi Group. Using ONLY the SEDs listed below, " +
+        "answer the user's question and guide them to relevant enhancements.\n\n" +
+        "Rules:\n" +
+        "- Find SEDs that match the user's question by issue type, system, or symptom\n" +
+        "- For each relevant SED, state: story number, project title, who fixed it, and one sentence on what the issue was\n" +
+        "- Format links as /sed/[id] — the UI renders them as clickable\n" +
+        "- List every relevant SED found — do not omit any\n" +
+        "- If nothing matches, say: 'No SEDs found matching that description.'\n" +
+        "- Do not add conversational filler. Answer directly and stop.\n\n" +
+        "SEDs IN THE SYSTEM:\n" +
+        sedListContext;
 
       const stream = await chat(messages, systemPrompt, CHAT_MODEL);
       return new Response(stream, {

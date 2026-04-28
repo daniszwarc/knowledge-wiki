@@ -267,6 +267,12 @@ async function migrate() {
     await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS unit_testing_images JSONB DEFAULT '[]'`);
     await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS acceptance_testing_images JSONB DEFAULT '[]'`);
 
+    // Interleaved content (text+image in document order) per section
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS business_requirements_content JSONB DEFAULT '[]'`);
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS it_design_content JSONB DEFAULT '[]'`);
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS unit_testing_content JSONB DEFAULT '[]'`);
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS acceptance_testing_content JSONB DEFAULT '[]'`);
+
     // Clear existing articles
     await client.query(`DELETE FROM articles`);
 

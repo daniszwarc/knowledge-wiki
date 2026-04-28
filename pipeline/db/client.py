@@ -198,6 +198,10 @@ def upsert_sed(data: dict, created_by: str) -> str:
         data_copy["it_design_images"] = json.dumps(data.get("it_design_images") or [])
         data_copy["unit_testing_images"] = json.dumps(data.get("unit_testing_images") or [])
         data_copy["acceptance_testing_images"] = json.dumps(data.get("acceptance_testing_images") or [])
+        data_copy["business_requirements_content"] = json.dumps(data.get("business_requirements_content") or [])
+        data_copy["it_design_content"] = json.dumps(data.get("it_design_content") or [])
+        data_copy["unit_testing_content"] = json.dumps(data.get("unit_testing_content") or [])
+        data_copy["acceptance_testing_content"] = json.dumps(data.get("acceptance_testing_content") or [])
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             conflict_target = "story_number" if data.get("story_number") else "ticket_number"
             cur.execute(
@@ -210,7 +214,9 @@ def upsert_sed(data: dict, created_by: str) -> str:
                     inc_ticket, cab_ticket, story_number, td_oms_task,
                     requestor, programmer, contributors, approved_by, company,
                     business_requirements_images, it_design_images,
-                    unit_testing_images, acceptance_testing_images
+                    unit_testing_images, acceptance_testing_images,
+                    business_requirements_content, it_design_content,
+                    unit_testing_content, acceptance_testing_content
                 ) VALUES (
                     %(ticket_number)s, %(project_title)s, %(department)s, %(author)s, %(date)s,
                     %(affected_systems)s, %(business_requirements)s, %(it_design)s,
@@ -219,7 +225,9 @@ def upsert_sed(data: dict, created_by: str) -> str:
                     %(inc_ticket)s, %(cab_ticket)s, %(story_number)s, %(td_oms_task)s,
                     %(requestor)s, %(programmer)s, %(contributors)s, %(approved_by)s, %(company)s,
                     %(business_requirements_images)s::jsonb, %(it_design_images)s::jsonb,
-                    %(unit_testing_images)s::jsonb, %(acceptance_testing_images)s::jsonb
+                    %(unit_testing_images)s::jsonb, %(acceptance_testing_images)s::jsonb,
+                    %(business_requirements_content)s::jsonb, %(it_design_content)s::jsonb,
+                    %(unit_testing_content)s::jsonb, %(acceptance_testing_content)s::jsonb
                 )
                 ON CONFLICT ({conflict_target}) DO UPDATE SET
                     ticket_number                 = EXCLUDED.ticket_number,
@@ -247,6 +255,10 @@ def upsert_sed(data: dict, created_by: str) -> str:
                     it_design_images              = EXCLUDED.it_design_images,
                     unit_testing_images           = EXCLUDED.unit_testing_images,
                     acceptance_testing_images     = EXCLUDED.acceptance_testing_images,
+                    business_requirements_content = EXCLUDED.business_requirements_content,
+                    it_design_content             = EXCLUDED.it_design_content,
+                    unit_testing_content          = EXCLUDED.unit_testing_content,
+                    acceptance_testing_content    = EXCLUDED.acceptance_testing_content,
                     updated_at                    = NOW()
                 RETURNING id
                 """,
