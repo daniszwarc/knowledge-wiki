@@ -11,15 +11,17 @@ from fastapi import APIRouter, Form, HTTPException, UploadFile
 from api.schemas import HealthResponse, IngestResponse, IngestTextRequest, WorkflowItem
 from db.client import (
     call_article_embed,
+    call_sed_embed,
     find_workflow_id,
     get_connection,
     insert_article,
     list_workflows,
+    upsert_sed,
 )
 from extract.pipeline import run_pipeline
 
 from ingest.chunker import chunk_text
-from ingest.loader import load_document, load_txt
+from ingest.loader import load_docx_full, load_document, load_txt
 
 router = APIRouter()
 
@@ -498,3 +500,231 @@ def ingest_text(body: IngestTextRequest):
         document_type="rules",
         workflow_id=workflow_id,
     )
+
+
+def extract_sed_data(data: bytes, job_id: Optional[str] = None, upload_dir: Optional[Path] = None) -> dict:
+    from docx import Document
+    from docx.oxml.ns import qn
+    import io
+    import re as _re
+
+    doc = Document(io.BytesIO(data))
+    result = {
+        "project_title": None,
+        "inc_ticket": None,
+        "cab_ticket": None,
+        "story_number": None,
+        "td_oms_task": None,
+        "company": None,
+        "requestor": None,
+        "programmer": None,
+        "contributors": None,
+        "approved_by": None,
+        "department": None,
+        "author": None,
+        "affected_systems": None,
+        "business_requirements": None,
+        "it_design": None,
+        "unit_testing": None,
+        "acceptance_testing": None,
+    }
+
+    FIELD_MAP = {
+        "service now originating ticket": "inc_ticket",
+        "service now cab ticket": "cab_ticket",
+        "story": "story_number",
+        "td/oms task": "td_oms_task",
+        "company": "company",
+        "requestor": "requestor",
+        "programmer": "programmer",
+        "contributor": "contributors",
+        "work approved by": "approved_by",
+    }
+
+    SECTION_MAP = {
+        "user - business requirements": "business_requirements",
+        "user – business requirements": "business_requirements",
+        "it - design": "it_design",
+        "it – design": "it_design",
+        "it - unit testing": "unit_testing",
+        "it – unit testing": "unit_testing",
+        "qa / user – acceptance testing": "acceptance_testing",
+        "qa / user - acceptance testing": "acceptance_testing",
+    }
+
+    SKIP_HEADINGS = ["overview", "sign-off", "amendments", "sign off"]
+
+    BOILERPLATE = [
+        "this section is to be filled out",
+        "in section 1.", "in section 2.", "in section 3.", "in section 4.",
+        "please describe", "include details such as",
+        "if it is a new report",
+        "include the date and time stamp",
+        "this functional design",
+        "living document",
+        "by signing below",
+        "if user acceptance testing is not required",
+        "enter the user - acceptance testing here",
+        "enter the it - unit testing here",
+        "enter the it - design here",
+        "enter the user - business requirements here",
+    ]
+
+    paragraphs = doc.paragraphs
+    current_section = None
+    in_content_zone = False
+    title_found = False
+    section_lines = {k: [] for k in ["business_requirements", "it_design", "unit_testing", "acceptance_testing"]}
+    img_counter = 1
+    section_images = {k: [] for k in ["business_requirements", "it_design", "unit_testing", "acceptance_testing"]}
+
+    for para in paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+
+        text_clean = _re.sub(r'[\t\xa0]+', ' ', text).strip()
+        text_lower = text_clean.lower()
+        style = para.style.name.lower()
+
+        if not title_found and style == "normal" and len(text_clean) > 3:
+            if not any(kw in text_lower for kw in ["living document", "functional design"]):
+                result["project_title"] = text_clean
+                title_found = True
+                continue
+
+        if ":" in text_clean and style == "normal":
+            parts = _re.split(r':\s*', text_clean, maxsplit=1)
+            if len(parts) == 2:
+                key = parts[0].strip().lower()
+                value = parts[1].strip()
+                for field_key, field_name in FIELD_MAP.items():
+                    if key.startswith(field_key):
+                        result[field_name] = value
+                        break
+
+        if "heading" in style:
+            heading_lower = text_lower
+
+            if any(skip in heading_lower for skip in SKIP_HEADINGS):
+                in_content_zone = False
+                continue
+
+            matched = None
+            for section_key, section_name in SECTION_MAP.items():
+                if section_key in heading_lower:
+                    matched = section_name
+                    break
+
+            if matched:
+                if "heading 1" in style:
+                    current_section = matched
+                    in_content_zone = False
+                elif "heading 2" in style and current_section == matched:
+                    in_content_zone = True
+            else:
+                in_content_zone = False
+            continue
+
+        if current_section and in_content_zone:
+            if any(bp in text_lower for bp in BOILERPLATE):
+                continue
+            if len(text_clean) < 5:
+                continue
+            section_lines[current_section].append(text_clean)
+
+        if current_section and in_content_zone and upload_dir and job_id:
+            drawings = para._element.findall('.//' + qn('w:drawing'), para._element.nsmap)
+            for drawing in drawings:
+                blips = drawing.findall('.//' + qn('a:blip'), drawing.nsmap)
+                for blip in blips:
+                    embed = blip.get(qn('r:embed'))
+                    if embed and embed in doc.part.rels:
+                        rel = doc.part.rels[embed]
+                        if 'image' in rel.reltype:
+                            try:
+                                img_data = rel.target_part.blob
+                                ct = rel.target_part.content_type
+                                img_ext = 'jpg' if 'jpeg' in ct else ct.split('/')[-1]
+                                img_filename = f"figure_{img_counter}.{img_ext}"
+                                img_path = upload_dir / img_filename
+                                upload_dir.mkdir(parents=True, exist_ok=True)
+                                img_path.write_bytes(img_data)
+                                section_images[current_section].append(
+                                    f"/uploads/{job_id}/{img_filename}"
+                                )
+                                img_counter += 1
+                            except Exception:
+                                continue
+
+    for key in section_lines:
+        content = "\n".join(section_lines[key]).strip()
+        result[key] = content if content else None
+
+    result["business_requirements_images"] = section_images["business_requirements"]
+    result["it_design_images"] = section_images["it_design"]
+    result["unit_testing_images"] = section_images["unit_testing"]
+    result["acceptance_testing_images"] = section_images["acceptance_testing"]
+
+    result["author"] = result["requestor"]
+    result["department"] = result["company"]
+    result["ticket_number"] = result["story_number"] or result["inc_ticket"] or "UNKNOWN"
+
+    return result
+
+
+@router.post("/ingest/sed")
+async def ingest_sed(
+    file: UploadFile,
+    owner_name: str = Form(""),
+    owner_email: str = Form(""),
+):
+    filename = file.filename or "upload"
+    if not filename.lower().endswith(".docx"):
+        raise HTTPException(status_code=422, detail="Only .docx files are accepted for SED upload")
+
+    data = await file.read()
+
+    try:
+        doc = load_docx_full(data, filename)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Failed to parse document: {e}")
+
+    if not doc.raw_text.strip():
+        raise HTTPException(status_code=422, detail="No text content extracted from document")
+
+    job_id = str(uuid.uuid4())
+    upload_dir = UPLOADS_DIR / job_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    extracted = extract_sed_data(data, job_id=job_id, upload_dir=upload_dir)
+
+    if extracted["ticket_number"] == "UNKNOWN":
+        extracted["ticket_number"] = f"SED-{str(uuid.uuid4())[:8].upper()}"
+
+    sed_data = {
+        **extracted,
+        "raw_content": doc.raw_text,
+        "source_filename": filename,
+        "date": None,
+    }
+
+    sed_id = upsert_sed(sed_data, created_by=owner_email or owner_name or "pipeline")
+
+    embed_text = " ".join(filter(None, [
+        extracted.get("ticket_number"),
+        extracted.get("project_title"),
+        extracted.get("business_requirements"),
+        extracted.get("it_design"),
+        extracted.get("unit_testing"),
+        extracted.get("acceptance_testing"),
+    ]))
+    threading.Thread(target=call_sed_embed, args=(sed_id, embed_text), daemon=True).start()
+
+    return {
+        "sed_id": sed_id,
+        "ticket_number": extracted.get("ticket_number"),
+        "story_number": extracted.get("story_number"),
+        "project_title": extracted.get("project_title"),
+        "department": extracted.get("department"),
+        "updated": False,
+    }

@@ -1,0 +1,448 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Sidebar } from "@/components/Sidebar";
+
+interface Me {
+  id: string;
+  email: string;
+  role: string;
+}
+
+type DocType = "process" | "article" | "sed";
+
+type UploadResult =
+  | { type: "process"; workflowId: string | null; workflowName: string; rulesExtracted: number }
+  | { type: "article"; articleId: string | null; title: string }
+  | { type: "sed"; sedId: string; ticketNumber: string; projectTitle: string };
+
+const STAGES: [number, number, string][] = [
+  [500, 8, "Uploading file…"],
+  [2000, 18, "Processing document…"],
+  [8000, 32, "Extracting content…"],
+  [25000, 48, "Still working…"],
+  [55000, 62, "This can take a minute…"],
+  [100000, 74, "Almost there…"],
+  [160000, 84, "Finalising…"],
+  [220000, 92, "Just a moment…"],
+];
+
+const DOC_TYPES: { id: DocType; title: string; description: string }[] = [
+  { id: "process", title: "Process document", description: "Extracts business rules into a workflow" },
+  { id: "article", title: "Reference article", description: "How-to guide, training material, or both" },
+  { id: "sed", title: "SED", description: "Small enhancement document" },
+];
+
+export default function UploadPage() {
+  const router = useRouter();
+  const [me, setMe] = useState<Me | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [selectedType, setSelectedType] = useState<DocType>("process");
+
+  // Process form
+  const [pFile, setPFile] = useState<File | null>(null);
+  const [pWorkflow, setPWorkflow] = useState("");
+  const [pDept, setPDept] = useState("");
+  const pFileRef = useRef<HTMLInputElement>(null);
+  const [pDragging, setPDragging] = useState(false);
+
+  // Article form
+  const [aFile, setAFile] = useState<File | null>(null);
+  const [aTitle, setATitle] = useState("");
+  const [aDept, setADept] = useState("");
+  const [aWorkflow, setAWorkflow] = useState("");
+  const [aAppearsAs, setAAppearsAs] = useState<Set<string>>(new Set(["how_to_guide"]));
+  const aFileRef = useRef<HTMLInputElement>(null);
+  const [aDragging, setADragging] = useState(false);
+
+  // SED form
+  const [sFile, setSFile] = useState<File | null>(null);
+  const sFileRef = useRef<HTMLInputElement>(null);
+  const [sDragging, setSDragging] = useState(false);
+
+  // Shared state
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [stage, setStage] = useState("");
+  const [result, setResult] = useState<UploadResult | null>(null);
+  const [error, setError] = useState("");
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: Me | null) => {
+        if (!data) { router.push("/login"); return; }
+        if (["viewer", "validator"].includes(data.role)) { router.push("/"); return; }
+        setMe(data);
+        setAuthLoading(false);
+      });
+  }, [router]);
+
+  if (authLoading) return null;
+
+  function startProgress() {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = STAGES.map(([delay, pct, lbl]) =>
+      setTimeout(() => { setProgress(pct); setStage(lbl); }, delay)
+    );
+  }
+
+  function stopProgress(success: boolean) {
+    timersRef.current.forEach(clearTimeout);
+    setProgress(success ? 100 : 0);
+    setStage(success ? "Done" : "");
+  }
+
+  function toggleAppearsAs(tag: string) {
+    setAAppearsAs((prev) => {
+      const next = new Set(prev);
+      if (next.has(tag)) {
+        if (next.size > 1) next.delete(tag);
+      } else {
+        next.add(tag);
+      }
+      return next;
+    });
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (loading) return;
+    setLoading(true);
+    setResult(null);
+    setError("");
+    setProgress(0);
+    setStage("");
+    startProgress();
+
+    try {
+      const fd = new FormData();
+
+      if (selectedType === "process") {
+        if (!pFile || !pWorkflow.trim() || !pDept.trim()) return;
+        fd.append("file", pFile);
+        fd.append("workflow_name", pWorkflow.trim());
+        fd.append("department", pDept.trim());
+        const res = await fetch("/api/upload/process", { method: "POST", body: fd });
+        if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
+        const json = await res.json();
+        stopProgress(true);
+        setResult({ type: "process", workflowId: json.workflow_id, workflowName: json.workflow_name, rulesExtracted: json.rules_extracted });
+
+      } else if (selectedType === "article") {
+        if (!aFile || !aTitle.trim() || !aDept.trim() || aAppearsAs.size === 0) return;
+        fd.append("file", aFile);
+        fd.append("title", aTitle.trim());
+        fd.append("department", aDept.trim());
+        if (aWorkflow.trim()) fd.append("workflow_name", aWorkflow.trim());
+        fd.append("appears_as", Array.from(aAppearsAs).join(","));
+        const res = await fetch("/api/upload/article", { method: "POST", body: fd });
+        if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
+        const json = await res.json();
+        stopProgress(true);
+        setResult({ type: "article", articleId: json.article_id, title: json.title });
+
+      } else {
+        if (!sFile) return;
+        fd.append("file", sFile);
+        const res = await fetch("/api/upload/sed", { method: "POST", body: fd });
+        if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
+        const json = await res.json();
+        stopProgress(true);
+        setResult({ type: "sed", sedId: json.sed_id, ticketNumber: json.ticket_number, projectTitle: json.project_title });
+      }
+    } catch (err) {
+      stopProgress(false);
+      setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function isDisabled(): boolean {
+    if (loading) return true;
+    if (selectedType === "process") return !pFile || !pWorkflow.trim() || !pDept.trim();
+    if (selectedType === "article") return !aFile || !aTitle.trim() || !aDept.trim() || aAppearsAs.size === 0;
+    return !sFile;
+  }
+
+  const dropzoneBase: React.CSSProperties = {
+    borderRadius: 8,
+    padding: "28px 16px",
+    textAlign: "center",
+    cursor: "pointer",
+    transition: "background 0.15s, border-color 0.15s",
+    marginBottom: 14,
+  };
+
+  return (
+    <div style={{ display: "flex", height: "100vh", overflow: "hidden", fontFamily: "var(--font-geist-sans), system-ui, sans-serif" }}>
+      <Sidebar me={me} />
+
+      <main style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ padding: "32px 40px 64px", maxWidth: 760, width: "100%" }}>
+
+          {/* Header */}
+          <div style={{ marginBottom: 28 }}>
+            <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--foreground)", marginBottom: 6, lineHeight: 1.3 }}>
+              Add document
+            </h1>
+            <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.6 }}>
+              Select what you are adding. The form adapts to the document type.
+            </p>
+          </div>
+
+          {/* Type selector */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+            {DOC_TYPES.map((dt) => {
+              const selected = selectedType === dt.id;
+              return (
+                <button
+                  key={dt.id}
+                  type="button"
+                  onClick={() => { setSelectedType(dt.id); setResult(null); setError(""); }}
+                  style={{
+                    border: selected ? "2px solid var(--foreground)" : "0.5px solid var(--card-border)",
+                    borderRadius: 12,
+                    padding: "16px 18px",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    background: selected ? "var(--card-hover-bg)" : "var(--sidebar-bg)",
+                    transition: "border-color 0.1s, background 0.1s",
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: selected ? 700 : 500, color: "var(--foreground)", marginBottom: 4 }}>
+                    {dt.title}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>
+                    {dt.description}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Form card */}
+          <div style={{ border: "0.5px solid var(--card-border)", borderRadius: 12, padding: "24px 28px" }}>
+            <form onSubmit={handleSubmit}>
+
+              {/* ── Process document ── */}
+              {selectedType === "process" && (
+                <>
+                  <div
+                    onClick={() => pFileRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); setPDragging(true); }}
+                    onDragLeave={() => setPDragging(false)}
+                    onDrop={(e) => { e.preventDefault(); setPDragging(false); const f = e.dataTransfer.files[0]; if (f) setPFile(f); }}
+                    style={{ ...dropzoneBase, border: `1.5px dashed ${pDragging ? "var(--foreground)" : "var(--card-border)"}`, background: pDragging ? "var(--card-hover-bg)" : "var(--sidebar-bg)" }}
+                  >
+                    <input ref={pFileRef} type="file" accept=".pdf,.docx,.txt" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) setPFile(f); }} />
+                    <span style={{ fontSize: 13, color: pFile ? "var(--foreground)" : "var(--muted-light)" }}>
+                      {pFile ? pFile.name : "Drop a PDF, DOCX, or TXT file here, or click to browse"}
+                    </span>
+                    {!pFile && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>PDF · DOCX · TXT</div>}
+                  </div>
+                  <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+                    <input
+                      className="search-input"
+                      required
+                      value={pWorkflow}
+                      onChange={(e) => setPWorkflow(e.target.value)}
+                      placeholder="Workflow / topic name"
+                      style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                    />
+                    <input
+                      className="search-input"
+                      required
+                      value={pDept}
+                      onChange={(e) => setPDept(e.target.value)}
+                      placeholder="Department"
+                      style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* ── Reference article ── */}
+              {selectedType === "article" && (
+                <>
+                  <div
+                    onClick={() => aFileRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); setADragging(true); }}
+                    onDragLeave={() => setADragging(false)}
+                    onDrop={(e) => { e.preventDefault(); setADragging(false); const f = e.dataTransfer.files[0]; if (f) setAFile(f); }}
+                    style={{ ...dropzoneBase, border: `1.5px dashed ${aDragging ? "var(--foreground)" : "var(--card-border)"}`, background: aDragging ? "var(--card-hover-bg)" : "var(--sidebar-bg)" }}
+                  >
+                    <input ref={aFileRef} type="file" accept=".pdf,.docx,.txt" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) setAFile(f); }} />
+                    <span style={{ fontSize: 13, color: aFile ? "var(--foreground)" : "var(--muted-light)" }}>
+                      {aFile ? aFile.name : "Drop a PDF, DOCX, or TXT file here, or click to browse"}
+                    </span>
+                    {!aFile && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>PDF · DOCX · TXT</div>}
+                  </div>
+                  <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+                    <input
+                      className="search-input"
+                      required
+                      value={aTitle}
+                      onChange={(e) => setATitle(e.target.value)}
+                      placeholder="Title"
+                      style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                    />
+                    <input
+                      className="search-input"
+                      required
+                      value={aDept}
+                      onChange={(e) => setADept(e.target.value)}
+                      placeholder="Department"
+                      style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                    />
+                  </div>
+                  <input
+                    className="search-input"
+                    value={aWorkflow}
+                    onChange={(e) => setAWorkflow(e.target.value)}
+                    placeholder="Related workflow (optional) — link to an existing workflow"
+                    style={{ width: "100%", padding: "9px 14px", fontSize: 13, borderRadius: 8, marginBottom: 14, boxSizing: "border-box" }}
+                  />
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: "var(--muted)", marginBottom: 8 }}>Appears under</div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {[
+                        { key: "how_to_guide", label: "How-to guides" },
+                        { key: "training_material", label: "Training material" },
+                      ].map(({ key, label }) => {
+                        const active = aAppearsAs.has(key);
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => toggleAppearsAs(key)}
+                            style={{
+                              padding: "5px 14px",
+                              borderRadius: 99,
+                              fontSize: 12,
+                              fontWeight: active ? 600 : 400,
+                              border: `1px solid ${active ? "#C0D7F3" : "var(--card-border)"}`,
+                              background: active ? "#E6F1FB" : "none",
+                              color: active ? "#185FA5" : "var(--muted)",
+                              cursor: "pointer",
+                              transition: "background 0.1s, color 0.1s, border-color 0.1s",
+                            }}
+                          >
+                            {active && <span style={{ marginRight: 5 }}>✓</span>}{label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* ── SED ── */}
+              {selectedType === "sed" && (
+                <>
+                  <div
+                    onClick={() => sFileRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); setSDragging(true); }}
+                    onDragLeave={() => setSDragging(false)}
+                    onDrop={(e) => { e.preventDefault(); setSDragging(false); const f = e.dataTransfer.files[0]; if (f) setSFile(f); }}
+                    style={{ ...dropzoneBase, border: `1.5px dashed ${sDragging ? "var(--foreground)" : "var(--card-border)"}`, background: sDragging ? "var(--card-hover-bg)" : "var(--sidebar-bg)" }}
+                  >
+                    <input ref={sFileRef} type="file" accept=".docx" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) setSFile(f); }} />
+                    <span style={{ fontSize: 13, color: sFile ? "var(--foreground)" : "var(--muted-light)" }}>
+                      {sFile ? sFile.name : "Drop a DOCX file here, or click to browse"}
+                    </span>
+                    {!sFile && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>DOCX only</div>}
+                  </div>
+                  <div style={{
+                    border: "0.5px solid var(--card-border)", borderRadius: 8,
+                    padding: "12px 16px", marginBottom: 14, background: "var(--sidebar-bg)",
+                    fontSize: 12, color: "var(--muted)", lineHeight: 1.8,
+                  }}>
+                    <strong style={{ fontWeight: 600, display: "block", marginBottom: 6, color: "var(--foreground)" }}>
+                      Fields extracted automatically
+                    </strong>
+                    Project title · Story number · INC ticket · CAB ticket · Requestor · Programmer ·
+                    Business requirements · IT design · Unit testing · Acceptance testing
+                  </div>
+                </>
+              )}
+
+              {/* Submit row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                <p style={{ fontSize: 12, color: "var(--muted-light)", margin: 0 }}>
+                  Submitted by <strong style={{ fontWeight: 500 }}>{me?.email}</strong> · logged automatically
+                </p>
+                <button
+                  type="submit"
+                  disabled={isDisabled()}
+                  style={{
+                    padding: "9px 20px", fontSize: 13, fontWeight: 500, borderRadius: 8, border: "none",
+                    background: "var(--foreground)", color: "var(--background)",
+                    cursor: isDisabled() ? "not-allowed" : "pointer",
+                    whiteSpace: "nowrap", flexShrink: 0,
+                    opacity: isDisabled() ? 0.45 : 1,
+                  }}
+                >
+                  {loading ? "Processing…" : selectedType === "article" ? "Upload and publish" : "Upload and process"}
+                </button>
+              </div>
+
+              {/* Progress */}
+              {loading && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{stage}</span>
+                    <span style={{ fontSize: 12, color: "var(--muted-light)" }}>{progress}%</span>
+                  </div>
+                  <div style={{ height: 4, borderRadius: 99, background: "var(--card-border)", overflow: "hidden" }}>
+                    <div style={{ height: "100%", borderRadius: 99, background: "var(--foreground)", width: `${progress}%`, transition: "width 0.6s ease" }} />
+                  </div>
+                </div>
+              )}
+
+              {/* Result */}
+              {result && (
+                <div style={{ marginTop: 16, fontSize: 13, color: "#15803d" }}>
+                  {result.type === "process" && (
+                    <>
+                      Extracted {result.rulesExtracted} rule{result.rulesExtracted !== 1 ? "s" : ""} from{" "}
+                      {result.workflowId
+                        ? <a href={`/workflow/${result.workflowId}`} style={{ color: "#15803d", fontWeight: 500 }}>{result.workflowName}</a>
+                        : <strong>{result.workflowName}</strong>
+                      }
+                    </>
+                  )}
+                  {result.type === "article" && (
+                    <>
+                      Published{" "}
+                      {result.articleId
+                        ? <a href={`/article/${result.articleId}`} style={{ color: "#15803d", fontWeight: 500 }}>{result.title}</a>
+                        : <strong>{result.title}</strong>
+                      }
+                    </>
+                  )}
+                  {result.type === "sed" && (
+                    <>
+                      Processed SED{" "}
+                      <a href={`/sed/${result.sedId}`} style={{ color: "#15803d", fontWeight: 500 }}>
+                        {result.ticketNumber} — {result.projectTitle}
+                      </a>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Error */}
+              {error && (
+                <div style={{ marginTop: 16, fontSize: 13, color: "#b91c1c" }}>{error}</div>
+              )}
+            </form>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}

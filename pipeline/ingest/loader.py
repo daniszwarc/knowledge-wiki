@@ -132,6 +132,32 @@ def load_docx(data: bytes, filename: str) -> DocumentContent:
     )
 
 
+def load_docx_full(data: bytes, filename: str) -> DocumentContent:
+    """Extract full text from a .docx preserving section structure."""
+    doc = Document(io.BytesIO(data))
+    parts = []
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+        style = para.style.name if para.style else ""
+        if "Heading" in style:
+            parts.append(f"\n## {text}")
+        else:
+            parts.append(text)
+    for table in doc.tables:
+        for row in table.rows:
+            row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+            if row_text:
+                parts.append(row_text)
+    return DocumentContent(
+        raw_text="\n".join(parts),
+        pages=len(doc.paragraphs),
+        format="docx",
+        filename=filename,
+    )
+
+
 def load_txt(data: bytes, filename: str) -> DocumentContent:
     text = data.decode("utf-8", errors="replace")
     lines = text.splitlines()

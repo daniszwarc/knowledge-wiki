@@ -46,12 +46,14 @@ export async function GET() {
       ),
       query<NavArticle>(
         `SELECT id, title, department, stakeholder_validated
-         FROM articles WHERE article_type = 'how_to_guide'
+         FROM articles
+         WHERE 'how_to_guide' = ANY(COALESCE(appears_as, ARRAY['how_to_guide']))
          ORDER BY department, title`
       ),
       query<NavArticle>(
         `SELECT id, title, department, stakeholder_validated
-         FROM articles WHERE article_type = 'training_material'
+         FROM articles
+         WHERE 'training_material' = ANY(COALESCE(appears_as, ARRAY['how_to_guide']::text[]))
          ORDER BY department, title`
       ),
     ]);

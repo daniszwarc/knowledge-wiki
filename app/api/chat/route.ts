@@ -55,10 +55,11 @@ const WORKFLOW_PROMPT_TEMPLATE =
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { messages, workflowId, context } = body as {
+    const { messages, workflowId, context, sedId } = body as {
       messages: { role: "user" | "assistant"; content: string }[];
       workflowId?: string | null;
       context?: string;
+      sedId?: string;
     };
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -72,6 +73,61 @@ export async function POST(req: NextRequest) {
     if (isInjectionAttempt(lastUserMessage)) {
       return new Response(INJECTION_REFUSAL, {
         headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+
+    if (sedId) {
+      const sedRows = await query<{
+        ticket_number: string;
+        project_title: string;
+        department: string | null;
+        author: string | null;
+        business_requirements: string | null;
+        it_design: string | null;
+        unit_testing: string | null;
+        acceptance_testing: string | null;
+      }>(
+        `SELECT ticket_number, project_title, department, author,
+                business_requirements, it_design, unit_testing, acceptance_testing
+         FROM seds WHERE id = $1`,
+        [sedId]
+      );
+
+      if (sedRows.length === 0) {
+        return new Response(JSON.stringify({ error: "SED not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const s = sedRows[0];
+      const sedContext = [
+        `Ticket: ${s.ticket_number}`,
+        `Title: ${s.project_title}`,
+        s.department ? `Department: ${s.department}` : null,
+        s.author ? `Author: ${s.author}` : null,
+        s.business_requirements ? `\n## Business Requirements\n${s.business_requirements}` : null,
+        s.it_design ? `\n## IT Design\n${s.it_design}` : null,
+        s.unit_testing ? `\n## Unit Testing\n${s.unit_testing}` : null,
+        s.acceptance_testing ? `\n## Acceptance Testing\n${s.acceptance_testing}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      const systemPrompt =
+        "Answer the question using ONLY the SED document below. Be brief and direct — 2-3 sentences maximum. " +
+        "Quote the relevant section directly. Do not analyze, interpret, caveat, or add any information not explicitly stated. " +
+        "If the document does not answer the question, say: 'This is not covered in this SED.' " +
+        "If the question relates to a broader wiki rule or process, note that the user may find related content in the wiki. " +
+        "Read the full conversation to resolve follow-up questions.\n\nSED DOCUMENT:\n" + sedContext;
+
+      const stream = await chat(messages, systemPrompt, CHAT_MODEL);
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Transfer-Encoding": "chunked",
+          "X-Content-Type-Options": "nosniff",
+        },
       });
     }
 

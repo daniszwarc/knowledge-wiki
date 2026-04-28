@@ -38,6 +38,40 @@ DOCUMENT:
 {text}
 """
 
+SED_EXTRACTION_PROMPT = """Read the SED document below and extract specific values. Return ONLY a JSON object. No explanation. No markdown. No backticks.
+
+Rules:
+- project_title: this is the FIRST line or heading of the document — the actual enhancement name (e.g. "Add New 1099 Value"). NOT a ticket label.
+- ticket_number: look for INC, CHG, Story, TD/OMS Task numbers — prefer the Story or INC number
+- department: look for Company or Department field value
+- author: look for Requestor field value (not Programmer)
+- date: look for any date field, format as YYYY-MM-DD or null
+- affected_systems: look for system or application names mentioned
+- business_requirements: copy ONLY the text written by the user AFTER the instructions paragraph that starts with "This section is to be filled out by...". Skip any instructional boilerplate. Copy only the actual requirement content written for this specific request.
+- it_design: copy ONLY the actual design content written for this request, skip any instructional boilerplate
+- unit_testing: copy ONLY the actual test cases written for this request, skip any instructional boilerplate
+- acceptance_testing: copy ONLY the actual acceptance criteria written for this request, skip any instructional boilerplate
+
+If a section contains only boilerplate instructions and no actual content, return null for that field.
+
+JSON keys:
+{{
+  "ticket_number": "...",
+  "project_title": "...",
+  "department": "...",
+  "author": "...",
+  "date": "...",
+  "affected_systems": "...",
+  "business_requirements": "...",
+  "it_design": "...",
+  "unit_testing": "...",
+  "acceptance_testing": "..."
+}}
+
+DOCUMENT:
+{text}
+"""
+
 EXTRACTION_PROMPT = """<instructions>
 You are a business rules extractor. Read the document below and extract ONLY rules that appear explicitly in the document text.
 

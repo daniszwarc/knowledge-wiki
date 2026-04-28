@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/daniszwarc/.claude/**)",
+      "Bash(git log *)"
+    ]
+  }
+}

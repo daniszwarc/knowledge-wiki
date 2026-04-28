@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 
 interface ChatPanelProps {
   workflowId?: string;
+  sedId?: string;
   context?: string;
   title?: string;
   subtitle?: string;
@@ -13,6 +14,7 @@ interface ChatPanelProps {
 
 export function ChatPanel({
   workflowId,
+  sedId,
   context,
   title = "Ask a question",
   subtitle,
@@ -54,6 +56,7 @@ export function ChatPanel({
         body: JSON.stringify({
           messages: next,
           workflowId: workflowId ?? null,
+          sedId: sedId ?? null,
           context,
         }),
       });

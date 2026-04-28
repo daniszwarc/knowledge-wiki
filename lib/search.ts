@@ -26,7 +26,17 @@ export interface ArticleSearchResult {
   rrf_score: number;
 }
 
-export type SearchResult = RuleSearchResult | ArticleSearchResult;
+export interface SedSearchResult {
+  type: "sed";
+  id: string;
+  ticket_number: string;
+  project_title: string;
+  department: string | null;
+  snippet: string;
+  rrf_score: number;
+}
+
+export type SearchResult = RuleSearchResult | ArticleSearchResult | SedSearchResult;
 
 // Keep legacy alias for backward compatibility
 export type { RuleSearchResult as LegacySearchResult };
@@ -40,6 +50,11 @@ type RuleRow = {
 
 type ArticleRow = {
   article_id: string; title: string; department: string | null; content: string;
+};
+
+type SedRow = {
+  id: string; ticket_number: string; project_title: string;
+  department: string | null; snippet: string;
 };
 
 export async function hybridSearch(queryText: string): Promise<SearchResult[]> {
@@ -129,6 +144,40 @@ export async function hybridSearch(queryText: string): Promise<SearchResult[]> {
       )
     : [];
 
+  // ── SED FTS ───────────────────────────────────────────────────────────────
+  const sedFts = await query<SedRow>(
+    `SELECT id, ticket_number, project_title, department,
+            left(coalesce(business_requirements, ''), 200) AS snippet
+     FROM seds
+     WHERE to_tsvector('english',
+             coalesce(ticket_number,'') || ' ' ||
+             coalesce(project_title,'') || ' ' ||
+             coalesce(business_requirements,''))
+           @@ plainto_tsquery('english', $1)
+     ORDER BY ts_rank(
+       to_tsvector('english',
+         coalesce(ticket_number,'') || ' ' ||
+         coalesce(project_title,'') || ' ' ||
+         coalesce(business_requirements,'')),
+       plainto_tsquery('english', $1)
+     ) DESC
+     LIMIT 20`,
+    [queryText]
+  );
+
+  // ── SED vector ────────────────────────────────────────────────────────────
+  const sedVec: SedRow[] = vectorLiteral
+    ? await query<SedRow>(
+        `SELECT id, ticket_number, project_title, department,
+                left(coalesce(business_requirements, ''), 200) AS snippet
+         FROM seds
+         WHERE embedding IS NOT NULL
+         ORDER BY embedding <=> $1::vector
+         LIMIT 20`,
+        [vectorLiteral]
+      )
+    : [];
+
   // ── RRF over rules ────────────────────────────────────────────────────────
   const ruleScores = new Map<string, { score: number; data: RuleRow }>();
   ruleFts.forEach((row, i) => {
@@ -153,6 +202,18 @@ export async function hybridSearch(queryText: string): Promise<SearchResult[]> {
     else articleScores.set(row.article_id, { score: s, data: row });
   });
 
+  // ── RRF over SEDs ─────────────────────────────────────────────────────────
+  const sedScores = new Map<string, { score: number; data: SedRow }>();
+  sedFts.forEach((row, i) => {
+    sedScores.set(row.id, { score: 1 / (60 + i + 1), data: row });
+  });
+  sedVec.forEach((row, i) => {
+    const s = 1 / (60 + i + 1);
+    const existing = sedScores.get(row.id);
+    if (existing) existing.score += s;
+    else sedScores.set(row.id, { score: s, data: row });
+  });
+
   // ── Merge and rank ────────────────────────────────────────────────────────
   const combined: SearchResult[] = [
     ...Array.from(ruleScores.values()).map(({ score, data }) => ({
@@ -167,6 +228,15 @@ export async function hybridSearch(queryText: string): Promise<SearchResult[]> {
       title: data.title,
       department: data.department,
       snippet: data.content,
+      rrf_score: score,
+    })),
+    ...Array.from(sedScores.values()).map(({ score, data }) => ({
+      type: "sed" as const,
+      id: data.id,
+      ticket_number: data.ticket_number,
+      project_title: data.project_title,
+      department: data.department,
+      snippet: data.snippet,
       rrf_score: score,
     })),
   ];

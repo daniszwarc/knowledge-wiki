@@ -25,6 +25,13 @@ interface NavDeptArticles {
   articles: NavArticle[];
 }
 
+interface NavSed {
+  id: string;
+  ticket_number: string;
+  project_title: string;
+  department: string | null;
+}
+
 interface SidebarNavData {
   businessRules: NavDeptWorkflows[];
   howToGuides: NavDeptArticles[];
@@ -37,33 +44,34 @@ interface Me {
   role: string;
 }
 
-type Section = "businessRules" | "howToGuides" | "trainingMaterial";
+type Section = "businessRules" | "referenceArticles" | "seds";
+type SubSection = "howToGuides" | "trainingMaterial";
 
 function detectActive(
   nav: SidebarNavData,
   activeWorkflowId?: string,
   activeArticleId?: string
-): { section: Section | null; dept: string | null } {
+): { section: Section | null; dept: string | null; subSection: SubSection | null } {
   if (activeWorkflowId) {
     for (const d of nav.businessRules) {
       if (d.workflows.some((w) => w.id === activeWorkflowId)) {
-        return { section: "businessRules", dept: d.department };
+        return { section: "businessRules", dept: `businessRules:${d.department}`, subSection: null };
       }
     }
   }
   if (activeArticleId) {
     for (const d of nav.howToGuides) {
       if (d.articles.some((a) => a.id === activeArticleId)) {
-        return { section: "howToGuides", dept: d.department };
+        return { section: "referenceArticles", dept: `howToGuides:${d.department}`, subSection: "howToGuides" };
       }
     }
     for (const d of nav.trainingMaterial) {
       if (d.articles.some((a) => a.id === activeArticleId)) {
-        return { section: "trainingMaterial", dept: d.department };
+        return { section: "referenceArticles", dept: `trainingMaterial:${d.department}`, subSection: "trainingMaterial" };
       }
     }
   }
-  return { section: null, dept: null };
+  return { section: null, dept: null, subSection: null };
 }
 
 function ChevronIcon({ rotated }: { rotated: boolean }) {
@@ -84,11 +92,7 @@ function ChevronIcon({ rotated }: { rotated: boolean }) {
   );
 }
 
-function SectionHeader({
-  label, open, onToggle,
-}: {
-  label: string; open: boolean; onToggle: () => void;
-}) {
+function SectionHeader({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) {
   return (
     <button
       onClick={onToggle}
@@ -106,9 +110,25 @@ function SectionHeader({
   );
 }
 
-function DeptHeader({
-  label, badge, open, onToggle,
-}: {
+function SubSectionHeader({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      style={{
+        width: "100%", display: "flex", alignItems: "center", gap: 6,
+        padding: "5px 16px 5px 24px",
+        background: "none", border: "none", cursor: "pointer",
+        fontSize: 11, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase",
+        color: "var(--muted)",
+      }}
+    >
+      <span style={{ flex: 1, textAlign: "left" }}>{label}</span>
+      <ChevronIcon rotated={open} />
+    </button>
+  );
+}
+
+function DeptHeader({ label, badge, open, onToggle }: {
   label: string; badge?: string; open: boolean; onToggle: () => void;
 }) {
   return (
@@ -124,20 +144,37 @@ function DeptHeader({
     >
       <span style={{ flex: 1, textAlign: "left" }}>{label}</span>
       {badge !== undefined && (
-        <span style={{ fontSize: 10, fontWeight: 400, color: "var(--muted-light)", marginRight: 2 }}>
-          {badge}
-        </span>
+        <span style={{ fontSize: 10, fontWeight: 400, color: "var(--muted-light)", marginRight: 2 }}>{badge}</span>
       )}
       <ChevronIcon rotated={open} />
     </button>
   );
 }
 
-function ArticleLink({
-  article, active,
-}: {
-  article: NavArticle; active: boolean;
+function SubDeptHeader({ label, badge, open, onToggle }: {
+  label: string; badge?: string; open: boolean; onToggle: () => void;
 }) {
+  return (
+    <button
+      onClick={onToggle}
+      style={{
+        width: "100%", display: "flex", alignItems: "center", gap: 6,
+        padding: "5px 16px 5px 36px",
+        background: "none", border: "none", cursor: "pointer",
+        fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase",
+        color: "var(--muted)",
+      }}
+    >
+      <span style={{ flex: 1, textAlign: "left" }}>{label}</span>
+      {badge !== undefined && (
+        <span style={{ fontSize: 10, fontWeight: 400, color: "var(--muted-light)", marginRight: 2 }}>{badge}</span>
+      )}
+      <ChevronIcon rotated={open} />
+    </button>
+  );
+}
+
+function ArticleLink({ article, active }: { article: NavArticle; active: boolean }) {
   return (
     <a
       href={`/article/${article.id}`}
@@ -174,17 +211,24 @@ const SECTION_SEPARATOR = (
 export function Sidebar({
   activeWorkflowId,
   activeArticleId,
+  activeSedId,
   me,
   refreshKey,
 }: {
   activeWorkflowId?: string;
   activeArticleId?: string;
+  activeSedId?: string;
   me?: Me | null;
   refreshKey?: number;
 }) {
   const [nav, setNav] = useState<SidebarNavData | null>(null);
+  const [seds, setSeds] = useState<NavSed[]>([]);
   const [openSections, setOpenSections] = useState<Record<Section, boolean>>({
     businessRules: false,
+    referenceArticles: false,
+    seds: false,
+  });
+  const [openSubSections, setOpenSubSections] = useState<Record<SubSection, boolean>>({
     howToGuides: false,
     trainingMaterial: false,
   });
@@ -198,29 +242,47 @@ export function Sidebar({
         setNav(data);
         if (!initialized.current) {
           initialized.current = true;
-          const { section, dept } = detectActive(data, activeWorkflowId, activeArticleId);
+          const { section, dept, subSection } = detectActive(data, activeWorkflowId, activeArticleId);
           if (section) {
             setOpenSections((p) => ({ ...p, [section]: true }));
-            if (dept) {
-              setOpenDepts((p) => ({ ...p, [`${section}:${dept}`]: true }));
+            if (subSection) {
+              setOpenSubSections((p) => ({ ...p, [subSection]: true }));
             }
+            if (dept) {
+              setOpenDepts((p) => ({ ...p, [dept]: true }));
+            }
+          }
+          if (activeSedId) {
+            setOpenSections((p) => ({ ...p, seds: true }));
           }
         }
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkflowId, activeArticleId, refreshKey]);
+  }, [activeWorkflowId, activeArticleId, activeSedId, refreshKey]);
+
+  useEffect(() => {
+    if (!openSections.seds) return;
+    fetch("/api/seds")
+      .then((r) => r.json())
+      .then((data: NavSed[]) => setSeds(data))
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSections.seds]);
 
   function toggleSection(s: Section) {
     setOpenSections((p) => ({ ...p, [s]: !p[s] }));
   }
 
-  function toggleDept(s: Section, dept: string) {
-    const key = `${s}:${dept}`;
+  function toggleSubSection(s: SubSection) {
+    setOpenSubSections((p) => ({ ...p, [s]: !p[s] }));
+  }
+
+  function toggleDept(key: string) {
     setOpenDepts((p) => ({ ...p, [key]: !p[key] }));
   }
 
-  function isDeptOpen(s: Section, dept: string) {
-    return !!openDepts[`${s}:${dept}`];
+  function isDeptOpen(key: string) {
+    return !!openDepts[key];
   }
 
   return (
@@ -248,14 +310,15 @@ export function Sidebar({
             />
             {openSections.businessRules && nav.businessRules.map((d) => {
               const totalRules = d.workflows.reduce((sum, w) => sum + Number(w.rule_count), 0);
-              const open = isDeptOpen("businessRules", d.department);
+              const key = `businessRules:${d.department}`;
+              const open = isDeptOpen(key);
               return (
                 <div key={d.department}>
                   <DeptHeader
                     label={d.department}
                     badge={String(totalRules)}
                     open={open}
-                    onToggle={() => toggleDept("businessRules", d.department)}
+                    onToggle={() => toggleDept(key)}
                   />
                   {open && (
                     <div style={{ marginLeft: 28, paddingLeft: 10, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
@@ -290,65 +353,154 @@ export function Sidebar({
 
             {SECTION_SEPARATOR}
 
-            {/* ── How to Guides ── */}
+            {/* ── Reference Articles ── */}
             <SectionHeader
-              label="How to Guides"
-              open={openSections.howToGuides}
-              onToggle={() => toggleSection("howToGuides")}
+              label="Reference Articles"
+              open={openSections.referenceArticles}
+              onToggle={() => toggleSection("referenceArticles")}
             />
-            {openSections.howToGuides && nav.howToGuides.map((d) => {
-              const open = isDeptOpen("howToGuides", d.department);
-              return (
-                <div key={d.department}>
-                  <DeptHeader
-                    label={d.department}
-                    open={open}
-                    onToggle={() => toggleDept("howToGuides", d.department)}
-                  />
-                  {open && (
-                    <div style={{ marginLeft: 28, paddingLeft: 10, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
-                      {d.articles.map((a) => (
-                        <ArticleLink key={a.id} article={a} active={a.id === activeArticleId} />
-                      ))}
+            {openSections.referenceArticles && (
+              <>
+                {/* How-to guides sub-section */}
+                <SubSectionHeader
+                  label="How-to guides"
+                  open={openSubSections.howToGuides}
+                  onToggle={() => toggleSubSection("howToGuides")}
+                />
+                {openSubSections.howToGuides && nav.howToGuides.map((d) => {
+                  const key = `howToGuides:${d.department}`;
+                  const open = isDeptOpen(key);
+                  return (
+                    <div key={d.department}>
+                      <SubDeptHeader
+                        label={d.department}
+                        open={open}
+                        onToggle={() => toggleDept(key)}
+                      />
+                      {open && (
+                        <div style={{ marginLeft: 36, paddingLeft: 10, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
+                          {d.articles.map((a) => (
+                            <ArticleLink key={a.id} article={a} active={a.id === activeArticleId} />
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                })}
+
+                {/* Training material sub-section */}
+                <SubSectionHeader
+                  label="Training material"
+                  open={openSubSections.trainingMaterial}
+                  onToggle={() => toggleSubSection("trainingMaterial")}
+                />
+                {openSubSections.trainingMaterial && nav.trainingMaterial.map((d) => {
+                  const key = `trainingMaterial:${d.department}`;
+                  const open = isDeptOpen(key);
+                  return (
+                    <div key={d.department}>
+                      <SubDeptHeader
+                        label={d.department}
+                        open={open}
+                        onToggle={() => toggleDept(key)}
+                      />
+                      {open && (
+                        <div style={{ marginLeft: 36, paddingLeft: 10, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
+                          {d.articles.map((a) => (
+                            <ArticleLink key={a.id} article={a} active={a.id === activeArticleId} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            )}
 
             {SECTION_SEPARATOR}
 
-            {/* ── Training Material ── */}
+            {/* ── SEDs ── */}
             <SectionHeader
-              label="Training Material"
-              open={openSections.trainingMaterial}
-              onToggle={() => toggleSection("trainingMaterial")}
+              label="SEDs"
+              open={openSections.seds}
+              onToggle={() => toggleSection("seds")}
             />
-            {openSections.trainingMaterial && nav.trainingMaterial.map((d) => {
-              const open = isDeptOpen("trainingMaterial", d.department);
-              return (
-                <div key={d.department}>
-                  <DeptHeader
-                    label={d.department}
-                    open={open}
-                    onToggle={() => toggleDept("trainingMaterial", d.department)}
-                  />
-                  {open && (
-                    <div style={{ marginLeft: 28, paddingLeft: 10, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
-                      {d.articles.map((a) => (
-                        <ArticleLink key={a.id} article={a} active={a.id === activeArticleId} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {openSections.seds && (
+              <>
+                {(() => {
+                  const grouped: Record<string, NavSed[]> = {};
+                  for (const s of seds) {
+                    const dept = s.department ?? "Other";
+                    if (!grouped[dept]) grouped[dept] = [];
+                    grouped[dept].push(s);
+                  }
+                  return Object.entries(grouped).map(([dept, items]) => {
+                    const key = `seds:${dept}`;
+                    const open = isDeptOpen(key);
+                    return (
+                      <div key={dept}>
+                        <DeptHeader
+                          label={dept}
+                          badge={String(items.length)}
+                          open={open}
+                          onToggle={() => toggleDept(key)}
+                        />
+                        {open && (
+                          <div style={{ marginLeft: 28, paddingLeft: 10, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
+                            {items.map((s) => {
+                              const active = s.id === activeSedId;
+                              const label = `${s.ticket_number} — ${s.project_title}`.slice(0, 40);
+                              return (
+                                <a
+                                  key={s.id}
+                                  href={`/sed/${s.id}`}
+                                  style={{
+                                    display: "flex", alignItems: "center", gap: 6,
+                                    padding: "5px 8px", fontSize: 12,
+                                    color: active ? "var(--foreground)" : "var(--muted)",
+                                    fontWeight: active ? 600 : 400,
+                                    background: active ? "var(--card-hover-bg)" : "none",
+                                    textDecoration: "none", borderRadius: 5,
+                                    borderLeft: active ? "2px solid var(--foreground)" : "2px solid transparent",
+                                    marginLeft: -2,
+                                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                                  }}
+                                  onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "var(--card-hover-bg)"; e.currentTarget.style.color = "var(--foreground)"; } }}
+                                  onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--muted)"; } }}
+                                >
+                                  {label}
+                                </a>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+              </>
+            )}
           </>
         )}
       </nav>
 
       {/* Footer */}
       <div style={{ padding: "10px 14px 80px", borderTop: "1px solid var(--sidebar-border)" }}>
+        {me && ["editor", "admin", "developer"].includes(me.role) && (
+          <a
+            href="/upload"
+            style={{
+              display: "block", fontSize: 11, fontWeight: 500,
+              color: "var(--foreground)", textDecoration: "none",
+              padding: "5px 8px", marginBottom: 6, borderRadius: 6,
+              border: "1px solid var(--card-border)", textAlign: "center",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--card-hover-bg)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+          >
+            + Add document
+          </a>
+        )}
         <a href="/experts" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
           Subject matter experts
         </a>

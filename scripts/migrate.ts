@@ -189,12 +189,83 @@ async function migrate() {
         CHECK (article_type IN ('how_to_guide', 'training_material'))
     `);
 
+    // appears_as — multi-value section tagging (replaces article_type for nav)
+    await client.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS appears_as TEXT[]`);
+    await client.query(`
+      UPDATE articles
+      SET appears_as = ARRAY[article_type]
+      WHERE appears_as IS NULL AND article_type IS NOT NULL
+    `);
+    await client.query(`
+      UPDATE articles
+      SET appears_as = ARRAY['how_to_guide']
+      WHERE appears_as IS NULL
+    `);
+    await client.query(`ALTER TABLE articles ALTER COLUMN appears_as SET DEFAULT ARRAY['how_to_guide']`);
+
     // Expand role CHECK constraint to include 'developer'
     await client.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`);
     await client.query(`
       ALTER TABLE users ADD CONSTRAINT users_role_check
         CHECK (role IN ('viewer', 'validator', 'editor', 'admin', 'developer'))
     `);
+
+    // seds table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS seds (
+        id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        ticket_number        VARCHAR(100) UNIQUE NOT NULL,
+        project_title        TEXT NOT NULL,
+        department           VARCHAR(255),
+        author               VARCHAR(255),
+        date                 DATE,
+        affected_systems     TEXT,
+        business_requirements TEXT,
+        it_design            TEXT,
+        unit_testing         TEXT,
+        acceptance_testing   TEXT,
+        raw_content          TEXT,
+        source_filename      VARCHAR(255),
+        embedding            vector(768),
+        created_by           VARCHAR(255),
+        created_at           TIMESTAMPTZ DEFAULT NOW(),
+        updated_at           TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS seds_embedding_idx
+      ON seds USING ivfflat (embedding vector_cosine_ops)
+      WITH (lists = 100)
+    `);
+
+    // Add structured metadata columns to seds
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS inc_ticket VARCHAR(100)`);
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS cab_ticket VARCHAR(100)`);
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS story_number VARCHAR(100)`);
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS td_oms_task VARCHAR(100)`);
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS requestor VARCHAR(255)`);
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS programmer VARCHAR(255)`);
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS contributors TEXT`);
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS approved_by TEXT`);
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS company VARCHAR(255)`);
+
+    // story_number is now the primary unique identifier for SEDs
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'seds_story_number_key'
+        ) THEN
+          ALTER TABLE seds ADD CONSTRAINT seds_story_number_key UNIQUE (story_number);
+        END IF;
+      END $$
+    `);
+
+    // Image arrays per section for SED documents
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS business_requirements_images JSONB DEFAULT '[]'`);
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS it_design_images JSONB DEFAULT '[]'`);
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS unit_testing_images JSONB DEFAULT '[]'`);
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS acceptance_testing_images JSONB DEFAULT '[]'`);
 
     // Clear existing articles
     await client.query(`DELETE FROM articles`);
