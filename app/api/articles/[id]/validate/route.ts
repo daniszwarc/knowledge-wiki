@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { validateSession } from "@/lib/auth";
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const token = req.cookies.get("wiki_session")?.value;
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const session = await validateSession(token);
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const { id } = await params;
     const { validatedBy } = await req.json();
     if (!validatedBy || typeof validatedBy !== "string") {
@@ -24,7 +31,7 @@ export async function POST(
     await query(
       `INSERT INTO audit_log (table_name, record_id, action, changed_by, new_value)
        VALUES ('articles', $1, 'UPDATE', $2, $3)`,
-      [id, validatedBy.trim(), JSON.stringify({ stakeholder_validated: true, validated_by: validatedBy.trim() })]
+      [id, session.email, JSON.stringify({ stakeholder_validated: true, validated_by: validatedBy.trim() })]
     );
 
     return NextResponse.json({ success: true });

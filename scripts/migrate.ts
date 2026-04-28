@@ -81,55 +81,19 @@ async function migrate() {
         table_name     VARCHAR(100) NOT NULL,
         record_id      UUID,
         action         VARCHAR(20) NOT NULL CHECK (action IN ('INSERT', 'UPDATE', 'DELETE')),
-        changed_by     VARCHAR(255) NOT NULL DEFAULT 'system',
+        changed_by     VARCHAR(255) NOT NULL,
         changed_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
         previous_value JSONB,
         new_value      JSONB
       )
     `);
 
-    // Trigger function for audit logging
-    await client.query(`
-      CREATE OR REPLACE FUNCTION audit_trigger_fn()
-      RETURNS TRIGGER AS $$
-      BEGIN
-        IF TG_OP = 'INSERT' THEN
-          INSERT INTO audit_log(table_name, record_id, action, new_value)
-          VALUES (TG_TABLE_NAME, NEW.id, 'INSERT', row_to_json(NEW)::jsonb);
-          RETURN NEW;
-        ELSIF TG_OP = 'UPDATE' THEN
-          INSERT INTO audit_log(table_name, record_id, action, previous_value, new_value)
-          VALUES (TG_TABLE_NAME, NEW.id, 'UPDATE', row_to_json(OLD)::jsonb, row_to_json(NEW)::jsonb);
-          RETURN NEW;
-        ELSIF TG_OP = 'DELETE' THEN
-          INSERT INTO audit_log(table_name, record_id, action, previous_value)
-          VALUES (TG_TABLE_NAME, OLD.id, 'DELETE', row_to_json(OLD)::jsonb);
-          RETURN OLD;
-        END IF;
-        RETURN NULL;
-      END;
-      $$ LANGUAGE plpgsql
-    `);
-
-    // Audit trigger on rules
-    await client.query(`
-      DROP TRIGGER IF EXISTS audit_rules_trigger ON rules
-    `);
-    await client.query(`
-      CREATE TRIGGER audit_rules_trigger
-      AFTER INSERT OR UPDATE OR DELETE ON rules
-      FOR EACH ROW EXECUTE FUNCTION audit_trigger_fn()
-    `);
-
-    // Audit trigger on workflows
-    await client.query(`
-      DROP TRIGGER IF EXISTS audit_workflows_trigger ON workflows
-    `);
-    await client.query(`
-      CREATE TRIGGER audit_workflows_trigger
-      AFTER INSERT OR UPDATE OR DELETE ON workflows
-      FOR EACH ROW EXECUTE FUNCTION audit_trigger_fn()
-    `);
+    // Remove DB-level audit triggers — all audit_log inserts are done
+    // explicitly in application code with the authenticated user's email.
+    await client.query(`DROP TRIGGER IF EXISTS audit_rules_trigger ON rules`);
+    await client.query(`DROP TRIGGER IF EXISTS audit_workflows_trigger ON workflows`);
+    await client.query(`DROP TRIGGER IF EXISTS audit_articles_trigger ON articles`);
+    await client.query(`DROP FUNCTION IF EXISTS audit_trigger_fn CASCADE`);
 
     // Index for vector similarity search
     await client.query(`
@@ -215,13 +179,8 @@ async function migrate() {
     await client.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS validated_by text`);
     await client.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS validated_at timestamptz`);
 
-    // Audit trigger on articles
+    // Audit trigger on articles — removed, audit is handled in application code
     await client.query(`DROP TRIGGER IF EXISTS audit_articles_trigger ON articles`);
-    await client.query(`
-      CREATE TRIGGER audit_articles_trigger
-      AFTER INSERT OR UPDATE OR DELETE ON articles
-      FOR EACH ROW EXECUTE FUNCTION audit_trigger_fn()
-    `);
 
     // article_type column
     await client.query(`

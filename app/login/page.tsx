@@ -111,7 +111,7 @@ export default function LoginPage() {
         </div>
 
         <p style={{ textAlign: "center", fontSize: 12, color: "var(--muted-light)", marginTop: 20 }}>
-          Contact your administrator to get access.
+          Contact your manager to get access.
         </p>
       </div>
     </div>

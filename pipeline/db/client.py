@@ -30,7 +30,7 @@ def find_workflow_id(workflow_name: str) -> Optional[str]:
         conn.close()
 
 
-def create_workflow_if_missing(name: str, department: str) -> str:
+def create_workflow_if_missing(name: str, department: str, created_by: str = "pipeline") -> str:
     existing = find_workflow_id(name)
     if existing:
         return existing
@@ -45,6 +45,19 @@ def create_workflow_if_missing(name: str, department: str) -> str:
                 VALUES (%s, %s, %s, %s, %s)
                 """,
                 (new_id, name, department, "", 0.0),
+            )
+            cur.execute(
+                """
+                INSERT INTO audit_log (table_name, record_id, action, changed_by, changed_at, new_value)
+                VALUES (%s, %s, %s, %s, NOW(), %s)
+                """,
+                (
+                    "workflows",
+                    new_id,
+                    "INSERT",
+                    created_by,
+                    psycopg2.extras.Json({"name": name, "department": department}),
+                ),
             )
             conn.commit()
         return new_id
@@ -143,6 +156,19 @@ def insert_article(
                 """,
                 (new_id, title, department, workflow_name or None,
                  content, source_filename, source_url, created_by, article_type),
+            )
+            cur.execute(
+                """
+                INSERT INTO audit_log (table_name, record_id, action, changed_by, changed_at, new_value)
+                VALUES (%s, %s, %s, %s, NOW(), %s)
+                """,
+                (
+                    "articles",
+                    new_id,
+                    "INSERT",
+                    created_by,
+                    psycopg2.extras.Json({"title": title, "source_filename": source_filename}),
+                ),
             )
             conn.commit()
         return new_id

@@ -442,7 +442,7 @@ export default function WorkflowPage() {
                       {workflow.process_narrative}
                     </ReactMarkdown>
                     <div style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 11, color: "var(--muted-light)" }}>
+                      <span style={{ fontSize: 11, color: "var(--muted-light)" }} suppressHydrationWarning>
                         Generated from {workflow.rules.length} documented rule{workflow.rules.length !== 1 ? "s" : ""}.{" "}
                         Last updated {relativeTime(workflow.narrative_generated_at)}.
                       </span>

@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { validateSession } from "@/lib/auth";
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const token = req.cookies.get("wiki_session")?.value;
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const session = await validateSession(token);
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const { id: ruleId } = await params;
 
     if (!ruleId) {
@@ -32,8 +39,8 @@ export async function DELETE(
 
     await query(
       `INSERT INTO audit_log (table_name, record_id, action, changed_by, new_value)
-       VALUES ('rules', $1, 'DELETE', 'manual-delete', $2::jsonb)`,
-      [ruleId, JSON.stringify({ ruleId })]
+       VALUES ('rules', $1, 'DELETE', $2, $3::jsonb)`,
+      [ruleId, session.email, JSON.stringify({ ruleId })]
     );
 
     const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000";

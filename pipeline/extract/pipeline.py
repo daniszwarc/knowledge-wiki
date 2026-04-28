@@ -98,7 +98,7 @@ def deduplicate(state: PipelineState) -> PipelineState:
 
 def write_to_db(state: PipelineState) -> PipelineState:
     errors = list(state["errors"])
-    workflow_id = create_workflow_if_missing(state["workflow_name"], state["department"])
+    workflow_id = create_workflow_if_missing(state["workflow_name"], state["department"], state.get("owner_email") or "pipeline")
 
     for rule in state["extracted_rules"]:
         try:

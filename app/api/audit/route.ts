@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     conditions.push(`table_name = $${params.length}`);
   }
   if (action) {
-    params.push(action);
+    params.push(action.toUpperCase());
     conditions.push(`action = $${params.length}`);
   }
   if (user) {

@@ -15,12 +15,16 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Knowledge Wiki",
   description: "Internal business process knowledge base",
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full`}>
-      <body className="h-full">{children}</body>
+      <body className="h-full" suppressHydrationWarning>{children}</body>
     </html>
   );
 }
