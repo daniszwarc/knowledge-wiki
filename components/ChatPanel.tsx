@@ -10,6 +10,7 @@ interface ChatPanelProps {
   context?: string;
   title?: string;
   subtitle?: string;
+  suggestedPrompts?: string[];
 }
 
 export function ChatPanel({
@@ -18,6 +19,7 @@ export function ChatPanel({
   context,
   title = "Ask a question",
   subtitle,
+  suggestedPrompts,
 }: ChatPanelProps) {
   const [chatMessages, setChatMessages] = useState<
     { role: "user" | "assistant"; content: string }[]
@@ -60,6 +62,19 @@ export function ChatPanel({
           context,
         }),
       });
+
+      const contentType = res.headers.get("content-type") ?? "";
+      if (!res.ok || !contentType.includes("text/plain")) {
+        const body = await res.text();
+        const isHtml = body.trim().startsWith("<");
+        const errorMsg = isHtml
+          ? "Session expired — please refresh the page."
+          : (() => { try { return JSON.parse(body).error ?? "Something went wrong."; } catch { return "Something went wrong."; } })();
+        setIsThinking(false);
+        setChatMessages((prev) => [...prev, { role: "assistant", content: errorMsg }]);
+        return;
+      }
+
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       if (!reader) return;
@@ -67,6 +82,57 @@ export function ChatPanel({
       setIsThinking(false);
       setChatMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        assistantText += decoder.decode(value);
+        setChatMessages((prev) => [
+          ...prev.slice(0, -1),
+          { role: "assistant", content: assistantText },
+        ]);
+      }
+    } finally {
+      setChatLoading(false);
+      setIsThinking(false);
+    }
+  }
+
+  async function handleSuggestedPrompt(prompt: string) {
+    if (chatLoading) return;
+    const userMsg = prompt;
+    setChatInput("");
+    const next = [...chatMessages, { role: "user" as const, content: userMsg }];
+    setChatMessages(next);
+    setChatLoading(true);
+    setIsThinking(true);
+    let assistantText = "";
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: next,
+          workflowId: workflowId ?? null,
+          context,
+          sedId: sedId ?? null,
+        }),
+      });
+      const contentType = res.headers.get("content-type") ?? "";
+      if (!res.ok || !contentType.includes("text/plain")) {
+        const body = await res.text();
+        const isHtml = body.trim().startsWith("<");
+        const errorMsg = isHtml
+          ? "Session expired — please refresh the page."
+          : (() => { try { return JSON.parse(body).error ?? "Something went wrong."; } catch { return "Something went wrong."; } })();
+        setIsThinking(false);
+        setChatMessages((prev) => [...prev, { role: "assistant", content: errorMsg }]);
+        return;
+      }
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) return;
+      setIsThinking(false);
+      setChatMessages((prev) => [...prev, { role: "assistant", content: "" }]);
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -260,6 +326,37 @@ export function ChatPanel({
           }
         `}</style>
       </div>
+
+      {/* Suggested prompt chips */}
+      {chatMessages.length === 0 && suggestedPrompts && suggestedPrompts.length > 0 && (
+        <div style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          padding: "12px 16px",
+          borderTop: "0.5px solid var(--sidebar-border)",
+        }}>
+          {suggestedPrompts.map((prompt, i) => (
+            <button
+              key={i}
+              onClick={() => handleSuggestedPrompt(prompt)}
+              style={{
+                padding: "6px 12px",
+                fontSize: 12,
+                border: "0.5px solid var(--card-border)",
+                borderRadius: 99,
+                background: "var(--sidebar-bg)",
+                color: "var(--muted)",
+                cursor: "pointer",
+                lineHeight: 1.4,
+                textAlign: "left",
+              }}
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Input */}
       <div

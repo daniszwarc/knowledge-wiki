@@ -20,6 +20,7 @@ function isCrossSedQuestion(message: string): boolean {
     "other sed", "other seds", "similar sed", "similar issue", "another sed",
     "any sed", "related sed", "same issue", "same problem", "seen this before",
     "other ticket", "other story", "has this happened",
+    "find similar issues", "find similar", "similar issues in other",
   ];
   return signals.some((s) => lower.includes(s));
 }
@@ -178,9 +179,21 @@ ${sed.acceptance_testing ?? 'not documented'}
                LIMIT 3`,
               [sedId, words]
             );
-            if (relatedRows.length > 0) {
-              const relatedLines = relatedRows.map((r, i) =>
-                `SED ${i + 1}: ${r.project_title} (Story: ${r.story_number ?? "N/A"}, Ticket: ${r.inc_ticket ?? "N/A"})\n` +
+            let finalRelatedRows = relatedRows;
+            if (relatedRows.length === 0) {
+              finalRelatedRows = await query<RelatedSed>(
+                `SELECT id, project_title, story_number, inc_ticket,
+                        LEFT(business_requirements, 300) AS business_requirements
+                 FROM seds
+                 WHERE id != $1
+                 ORDER BY created_at DESC
+                 LIMIT 10`,
+                [sedId]
+              );
+            }
+            if (finalRelatedRows.length > 0) {
+              const relatedLines = finalRelatedRows.map((r) =>
+                `Story ${r.story_number ?? r.id.substring(0, 8)}: ${r.project_title} (Ticket: ${r.inc_ticket ?? "N/A"})\n` +
                 `Business requirements: ${(r.business_requirements ?? "").substring(0, 300)}\n` +
                 `Link: /sed/${r.id}`
               );
@@ -202,8 +215,14 @@ ${sed.acceptance_testing ?? 'not documented'}
         "If asked about the programmer, use the Programmer field. " +
         "If asked about who requested, use the Requestor field. " +
         (relatedContext
-          ? "If the user asks about other SEDs or similar issues, use the RELATED SEDs section to answer. " +
-            "Include the story number and a link when referencing another SED. " +
+          ? "The user is asking about similar issues in other SEDs. " +
+            "Search the RELATED SEDs section and identify ONLY the ones that have " +
+            "a genuinely similar issue, symptom, or affected system as the current SED. " +
+            "If none are truly similar, say so clearly without listing unrelated SEDs. " +
+            "Only mention SEDs that are actually relevant — do not list all SEDs just because " +
+            "they exist. " +
+            "For each relevant SED, state the story number (e.g. Story 102909), " +
+            "what the issue was in one sentence, and the link. " +
             "Format links as /sed/[id] — the UI renders them as clickable. "
           : "") +
         "If the answer is not in the document, say: 'This is not covered in this SED.'\n\n" +

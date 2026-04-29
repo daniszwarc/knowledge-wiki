@@ -2,9 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { useEffect, useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
 
 interface Sed {
@@ -20,16 +18,38 @@ interface Sed {
   created_at: string;
 }
 
+interface SearchResult {
+  id: string;
+  story_number: string | null;
+  project_title: string;
+  inc_ticket: string | null;
+  programmer: string | null;
+  date: string | null;
+  similarity: number;
+  summary: string | null;
+  link: string;
+}
+
+function similarityLabel(score: number): { label: string; color: string } {
+  if (score > 0.7) return { label: "Strong match", color: "#4ade80" };
+  if (score >= 0.5) return { label: "Possible match", color: "#f59e0b" };
+  return { label: "Weak match", color: "var(--muted-light)" };
+}
+
+function formatDate(d: string | null): string {
+  if (!d) return "—";
+  const dt = new Date(d);
+  return dt.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
+
 export default function SedsPage() {
   const [me, setMe] = useState<{ id: string; email: string; role: string } | null>(null);
-  const [seds, setSeds] = useState<Sed[]>([]);
-  const [showAll, setShowAll] = useState(false);
-  const [chatInput, setChatInput] = useState("");
-  const [chatQuestion, setChatQuestion] = useState("");
-  const [chatResponse, setChatResponse] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatSlow, setChatSlow] = useState(false);
-  const chatSlowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [recentSeds, setRecentSeds] = useState<Sed[]>([]);
+  const [queryText, setQueryText] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [results, setResults] = useState<SearchResult[] | null>(null);
+  const [emptyMessage, setEmptyMessage] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -40,296 +60,275 @@ export default function SedsPage() {
   useEffect(() => {
     fetch("/api/seds")
       .then((r) => r.json())
-      .then((data: Sed[]) => setSeds(Array.isArray(data) ? data : []));
+      .then((data: Sed[]) => {
+        if (!Array.isArray(data)) return;
+        const sorted = [...data].sort((a, b) => {
+          const da = a.created_at ?? "";
+          const db = b.created_at ?? "";
+          return db.localeCompare(da);
+        });
+        setRecentSeds(sorted.slice(0, 5));
+      });
   }, []);
 
-  async function handleChat(e: { preventDefault(): void }) {
+  async function handleSearch(e: { preventDefault(): void }) {
     e.preventDefault();
-    if (!chatInput.trim() || chatLoading) return;
-    const q = chatInput.trim();
-    setChatInput("");
-    setChatResponse("");
-    setChatQuestion(q);
-    setChatLoading(true);
-    setChatSlow(false);
-    if (chatSlowTimerRef.current) clearTimeout(chatSlowTimerRef.current);
-    chatSlowTimerRef.current = setTimeout(() => setChatSlow(true), 2000);
+    if (queryText.trim().length < 20 || searching) return;
+    setSearching(true);
+    setResults(null);
+    setEmptyMessage(null);
+    setSearchError(null);
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/api/seds/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: [{ role: "user", content: q }],
-          workflowId: null,
-          context: null,
-          sedSearch: true,
-        }),
+        body: JSON.stringify({ query: queryText.trim() }),
       });
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-      if (!reader) return;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        setChatResponse((prev) => prev + decoder.decode(value));
+      const data = await res.json();
+      if (!res.ok) {
+        setSearchError(data.error ?? "Search failed.");
+        return;
       }
+      if (data.results && data.results.length > 0) {
+        setResults(data.results);
+      } else {
+        setResults([]);
+        setEmptyMessage(data.message ?? "No similar issues found in past SEDs.");
+      }
+    } catch {
+      setSearchError("Could not reach the search service. Please try again.");
     } finally {
-      if (chatSlowTimerRef.current) clearTimeout(chatSlowTimerRef.current);
-      setChatLoading(false);
-      setChatSlow(false);
+      setSearching(false);
     }
   }
 
-  const recentSeds = [...seds]
-    .sort((a, b) => {
-      const da = a.date ?? a.created_at ?? "";
-      const db = b.date ?? b.created_at ?? "";
-      return db.localeCompare(da);
-    })
-    .slice(0, 10);
-
-  const grouped: Record<string, Sed[]> = {};
-  for (const s of seds) {
-    const dept = s.department ?? "Other";
-    if (!grouped[dept]) grouped[dept] = [];
-    grouped[dept].push(s);
-  }
+  const canSearch = queryText.trim().length >= 20 && !searching;
 
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden", fontFamily: "var(--font-geist-sans), system-ui, sans-serif" }}>
       <Sidebar me={me} />
 
       <main style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "32px 32px 64px", maxWidth: 960, width: "100%" }}>
+        <div style={{ padding: "40px 40px 80px", maxWidth: 800, width: "100%" }}>
 
-          {/* Header */}
+          {/* Hero */}
           <div style={{ marginBottom: 36 }}>
-            <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--foreground)", marginBottom: 8, lineHeight: 1.3 }}>
-              Small Enhancement Documents
+            <h1 style={{ fontSize: 24, fontWeight: 600, color: "var(--foreground)", marginBottom: 10, lineHeight: 1.3 }}>
+              Find past solutions
             </h1>
-            <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.6, maxWidth: 520 }}>
-              Search past enhancements to find similar issues and solutions.
+            <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.6, maxWidth: 560 }}>
+              Describe the issue you are working on. The wiki will search past SEDs for similar problems and how they were resolved.
             </p>
           </div>
 
-          {/* Discovery chat */}
-          <div style={{
-            marginBottom: 40,
-            padding: 20,
-            borderRadius: 12,
-            border: "1px solid var(--card-border)",
-            background: "var(--sidebar-bg)",
-          }}>
-            <p style={{ fontSize: 13, fontWeight: 500, color: "var(--muted)", marginBottom: 12 }}>
-              Search SEDs
-            </p>
-            <form onSubmit={handleChat} style={{ display: "flex", gap: 8 }}>
-              <input
-                className="search-input"
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="e.g. Was there a SED dealing with PHP 8.4 issues?"
-                style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-              />
+          {/* Search form */}
+          <form onSubmit={handleSearch} style={{ marginBottom: 40 }}>
+            <textarea
+              value={queryText}
+              onChange={(e) => setQueryText(e.target.value)}
+              rows={3}
+              placeholder="e.g. PHP is throwing an error when validating numeric fields in PO entry"
+              style={{
+                width: "100%",
+                padding: "12px 14px",
+                fontSize: 14,
+                borderRadius: 10,
+                border: "1px solid var(--card-border)",
+                background: "var(--sidebar-bg)",
+                color: "var(--foreground)",
+                resize: "vertical",
+                lineHeight: 1.6,
+                boxSizing: "border-box",
+                fontFamily: "inherit",
+                outline: "none",
+              }}
+            />
+            <div style={{ marginTop: 10 }}>
               <button
                 type="submit"
-                disabled={chatLoading || !chatInput.trim()}
+                disabled={!canSearch}
                 style={{
-                  padding: "9px 18px",
+                  padding: "9px 20px",
                   fontSize: 13,
                   fontWeight: 500,
                   borderRadius: 8,
                   border: "none",
                   background: "var(--foreground)",
                   color: "var(--background)",
-                  cursor: chatLoading || !chatInput.trim() ? "not-allowed" : "pointer",
-                  opacity: chatLoading || !chatInput.trim() ? 0.45 : 1,
-                  flexShrink: 0,
+                  cursor: canSearch ? "pointer" : "not-allowed",
+                  opacity: canSearch ? 1 : 0.4,
                 }}
               >
-                {chatLoading ? "…" : "Ask"}
+                {searching ? "Searching past SEDs…" : "Search past SEDs"}
               </button>
-            </form>
+              {queryText.trim().length > 0 && queryText.trim().length < 20 && (
+                <span style={{ marginLeft: 12, fontSize: 12, color: "var(--muted-light)" }}>
+                  {20 - queryText.trim().length} more character{20 - queryText.trim().length !== 1 ? "s" : ""} needed
+                </span>
+              )}
+            </div>
+          </form>
 
-            {(chatLoading || chatResponse) && (
-              <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--card-border)" }}>
-                {chatQuestion && (
-                  <p style={{ fontSize: 12, color: "var(--muted-light)", marginBottom: 10, fontStyle: "italic" }}>
-                    &quot;{chatQuestion}&quot;
-                  </p>
-                )}
-                {chatLoading ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span style={{ fontSize: 13, color: "var(--muted)" }}>
-                      Searching the SED archive
-                      <span style={{ display: "inline-block", animation: "chatDots 1.2s steps(4, end) infinite" }}>...</span>
-                    </span>
-                    {chatSlow && (
-                      <span style={{ fontSize: 12, color: "var(--muted-light)" }}>This may take a moment…</span>
-                    )}
-                    <style>{`@keyframes chatDots { 0%,20%{color:transparent;text-shadow:.4em 0 0 transparent,.8em 0 0 transparent} 40%{color:var(--muted);text-shadow:.4em 0 0 transparent,.8em 0 0 transparent} 60%{text-shadow:.4em 0 0 var(--muted),.8em 0 0 transparent} 80%,100%{text-shadow:.4em 0 0 var(--muted),.8em 0 0 var(--muted)} }`}</style>
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-                      <button
-                        type="button"
-                        onClick={() => { setChatResponse(""); setChatQuestion(""); }}
-                        style={{ fontSize: 11, color: "var(--muted-light)", background: "none", border: "none", cursor: "pointer", padding: "2px 4px" }}
-                      >
-                        Clear
-                      </button>
-                    </div>
-                    <div style={{ fontSize: 13, color: "var(--foreground)", lineHeight: 1.7 }}>
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          p: ({ children }) => <p style={{ margin: "0 0 8px", lineHeight: 1.7, fontSize: 13 }}>{children}</p>,
-                          strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
-                          em: ({ children }) => <em style={{ fontStyle: "italic" }}>{children}</em>,
-                          ul: ({ children }) => <ul style={{ marginLeft: 20, marginBottom: 8, lineHeight: 1.7, listStyleType: "disc" }}>{children}</ul>,
-                          ol: ({ children }) => <ol style={{ marginLeft: 20, marginBottom: 8, lineHeight: 1.7 }}>{children}</ol>,
-                          li: ({ children }) => <li style={{ marginBottom: 4, fontSize: 13 }}>{children}</li>,
-                          a: ({ href, children }) => (
-                            <a href={href} style={{ color: "var(--foreground)", fontWeight: 500, textDecoration: "underline", textUnderlineOffset: 2 }}>
-                              {children}
-                            </a>
-                          ),
-                        }}
-                      >
-                        {chatResponse.replace(/(?<!\]\()\/sed\/[0-9a-f-]{36}/g, (m) => `[${m}](${m})`)}
-                      </ReactMarkdown>
-                    </div>
-                  </>
-                )}
+          {/* Error */}
+          {searchError && (
+            <div style={{ marginBottom: 32, padding: "12px 16px", borderRadius: 8, background: "var(--sidebar-bg)", border: "1px solid var(--card-border)", fontSize: 13, color: "var(--muted)" }}>
+              {searchError}
+            </div>
+          )}
+
+          {/* Results */}
+          {results !== null && results.length > 0 && (
+            <div style={{ marginBottom: 48 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+                <h2 style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", whiteSpace: "nowrap" }}>
+                  Results
+                </h2>
+                <hr style={{ flex: 1, border: "none", borderTop: "1px solid var(--card-border)", margin: 0 }} />
               </div>
-            )}
-          </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {results.map((r) => {
+                  const { label, color } = similarityLabel(r.similarity);
+                  const [line1, line2] = r.summary
+                    ? r.summary.split(/(?<=\.)\s+/)
+                    : [null, null];
+                  return (
+                    <div
+                      key={r.id}
+                      style={{
+                        border: "0.5px solid var(--card-border)",
+                        borderRadius: 10,
+                        padding: 20,
+                        background: "var(--sidebar-bg)",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 12, color: "var(--muted)", fontFamily: "var(--font-geist-mono), monospace" }}>
+                            {[r.story_number, r.inc_ticket].filter(Boolean).join(" · ") || "—"}
+                          </span>
+                          <span style={{
+                            fontSize: 10, fontWeight: 500,
+                            color, border: `1px solid ${color}`,
+                            borderRadius: 4, padding: "1px 6px",
+                            opacity: 0.85,
+                          }}>
+                            {label}
+                          </span>
+                        </div>
+                        <a
+                          href={r.link}
+                          style={{
+                            fontSize: 12, fontWeight: 500,
+                            color: "var(--foreground)",
+                            textDecoration: "none",
+                            padding: "4px 12px",
+                            borderRadius: 6,
+                            border: "1px solid var(--card-border)",
+                            whiteSpace: "nowrap",
+                            flexShrink: 0,
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = "var(--card-hover-bg)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                        >
+                          View SED
+                        </a>
+                      </div>
 
-          {/* Recent SEDs table */}
-          <div style={{ marginBottom: 32 }}>
+                      <p style={{ fontSize: 15, fontWeight: 500, color: "var(--foreground)", marginBottom: 10, lineHeight: 1.4 }}>
+                        {r.project_title}
+                      </p>
+
+                      {r.summary ? (
+                        <div style={{ fontSize: 14, color: "var(--foreground)", lineHeight: 1.7, marginBottom: 12 }}>
+                          {line1 && (
+                            <p style={{ margin: "0 0 4px" }}>
+                              <span style={{ color: "var(--muted)", fontSize: 13 }}>The issue was: </span>
+                              {line1.replace(/\.$/, "")}.
+                            </p>
+                          )}
+                          {line2 && (
+                            <p style={{ margin: 0 }}>
+                              <span style={{ color: "var(--muted)", fontSize: 13 }}>How it was fixed: </span>
+                              {line2.replace(/\.$/, "")}.
+                            </p>
+                          )}
+                          {!line1 && !line2 && (
+                            <p style={{ margin: 0 }}>{r.summary}</p>
+                          )}
+                        </div>
+                      ) : (
+                        <p style={{ fontSize: 13, color: "var(--muted-light)", marginBottom: 12, fontStyle: "italic" }}>
+                          Summary unavailable.
+                        </p>
+                      )}
+
+                      <p style={{ fontSize: 12, color: "var(--muted)", margin: 0 }}>
+                        {r.programmer ? <>Programmer: {r.programmer}</> : null}
+                        {r.programmer && r.date ? " · " : null}
+                        {r.date ? `Date: ${formatDate(r.date)}` : null}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {results !== null && results.length === 0 && (
+            <div style={{ marginBottom: 48, padding: "20px 24px", borderRadius: 10, border: "1px solid var(--card-border)", background: "var(--sidebar-bg)" }}>
+              <p style={{ fontSize: 14, color: "var(--foreground)", fontWeight: 500, marginBottom: 6 }}>
+                {emptyMessage ?? "No similar issues found in past SEDs."}
+              </p>
+              <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
+                This may be a new type of issue — consider documenting it as a SED once resolved.
+              </p>
+            </div>
+          )}
+
+          {/* Recently added SEDs */}
+          <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
               <h2 style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", whiteSpace: "nowrap" }}>
-                Recent SEDs
+                Recently added SEDs
               </h2>
               <hr style={{ flex: 1, border: "none", borderTop: "1px solid var(--card-border)", margin: 0 }} />
             </div>
-
-            {seds.length === 0 ? (
+            {recentSeds.length === 0 ? (
               <p style={{ fontSize: 13, color: "var(--muted-light)" }}>No SEDs uploaded yet.</p>
             ) : (
-              <>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid var(--card-border)" }}>
-                      <th style={{ textAlign: "left", padding: "6px 12px 6px 0", fontSize: 11, fontWeight: 600, color: "var(--muted-light)", letterSpacing: "0.05em", textTransform: "uppercase" }}>Story</th>
-                      <th style={{ textAlign: "left", padding: "6px 12px", fontSize: 11, fontWeight: 600, color: "var(--muted-light)", letterSpacing: "0.05em", textTransform: "uppercase" }}>Project title</th>
-                      <th style={{ textAlign: "left", padding: "6px 12px", fontSize: 11, fontWeight: 600, color: "var(--muted-light)", letterSpacing: "0.05em", textTransform: "uppercase" }}>Programmer</th>
-                      <th style={{ textAlign: "left", padding: "6px 0 6px 12px", fontSize: 11, fontWeight: 600, color: "var(--muted-light)", letterSpacing: "0.05em", textTransform: "uppercase" }}>Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentSeds.map((s) => (
-                      <tr
-                        key={s.id}
-                        style={{ borderBottom: "1px solid var(--card-border)" }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "var(--card-hover-bg)"; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "none"; }}
-                      >
-                        <td style={{ padding: "10px 12px 10px 0" }}>
-                          <a href={`/sed/${s.id}`} style={{ color: "var(--muted)", textDecoration: "none", fontSize: 12, fontFamily: "var(--font-geist-mono), monospace" }}>
-                            {s.story_number ?? s.inc_ticket ?? s.ticket_number ?? "—"}
-                          </a>
-                        </td>
-                        <td style={{ padding: "10px 12px" }}>
-                          <a href={`/sed/${s.id}`} style={{ color: "var(--foreground)", textDecoration: "none", fontWeight: 500 }}>
-                            {s.project_title}
-                          </a>
-                        </td>
-                        <td style={{ padding: "10px 12px", color: "var(--muted)" }}>
-                          {s.programmer ?? "—"}
-                        </td>
-                        <td style={{ padding: "10px 0 10px 12px", color: "var(--muted-light)", fontSize: 12 }}>
-                          {s.date ? s.date.substring(0, 10) : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                {!showAll && seds.length > 10 && (
-                  <button
-                    onClick={() => setShowAll(true)}
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {recentSeds.map((s) => (
+                  <a
+                    key={s.id}
+                    href={`/sed/${s.id}`}
                     style={{
-                      marginTop: 12, fontSize: 12, color: "var(--muted)",
-                      background: "none", border: "none", cursor: "pointer",
-                      padding: "4px 0", textDecoration: "underline", textUnderlineOffset: 2,
+                      display: "flex", alignItems: "baseline", gap: 10,
+                      padding: "9px 0",
+                      borderBottom: "1px solid var(--card-border)",
+                      textDecoration: "none",
+                      color: "inherit",
                     }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--card-hover-bg)"; e.currentTarget.style.paddingLeft = "6px"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.paddingLeft = "0"; }}
                   >
-                    View all {seds.length} SEDs
-                  </button>
-                )}
-              </>
+                    <span style={{ fontSize: 12, color: "var(--muted)", fontFamily: "var(--font-geist-mono), monospace", flexShrink: 0 }}>
+                      {s.story_number ?? s.inc_ticket ?? s.ticket_number ?? "—"}
+                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {s.project_title}
+                    </span>
+                    <span style={{ fontSize: 12, color: "var(--muted)", flexShrink: 0 }}>
+                      {s.programmer ?? "—"}
+                    </span>
+                    <span style={{ fontSize: 12, color: "var(--muted-light)", flexShrink: 0 }}>
+                      {s.date ? s.date.substring(0, 10) : "—"}
+                    </span>
+                  </a>
+                ))}
+              </div>
             )}
           </div>
-
-          {/* All SEDs grouped by department (expanded view) */}
-          {showAll && (
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-                <h2 style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", whiteSpace: "nowrap" }}>
-                  All SEDs by department
-                </h2>
-                <hr style={{ flex: 1, border: "none", borderTop: "1px solid var(--card-border)", margin: 0 }} />
-                <button
-                  onClick={() => setShowAll(false)}
-                  style={{ fontSize: 11, color: "var(--muted-light)", background: "none", border: "none", cursor: "pointer", whiteSpace: "nowrap" }}
-                >
-                  Collapse
-                </button>
-              </div>
-
-              {Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([dept, items]) => (
-                <div key={dept} style={{ marginBottom: 32 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)" }}>
-                      {dept}
-                    </span>
-                    <span style={{ fontSize: 11, color: "var(--muted-light)" }}>({items.length})</span>
-                  </div>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                    <tbody>
-                      {items.map((s) => (
-                        <tr
-                          key={s.id}
-                          style={{ borderBottom: "1px solid var(--card-border)" }}
-                          onMouseEnter={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "var(--card-hover-bg)"; }}
-                          onMouseLeave={(e) => { (e.currentTarget as HTMLTableRowElement).style.background = "none"; }}
-                        >
-                          <td style={{ padding: "9px 12px 9px 0", width: 120 }}>
-                            <a href={`/sed/${s.id}`} style={{ color: "var(--muted)", textDecoration: "none", fontSize: 12, fontFamily: "var(--font-geist-mono), monospace" }}>
-                              {s.story_number ?? s.inc_ticket ?? s.ticket_number ?? "—"}
-                            </a>
-                          </td>
-                          <td style={{ padding: "9px 12px" }}>
-                            <a href={`/sed/${s.id}`} style={{ color: "var(--foreground)", textDecoration: "none", fontWeight: 500 }}>
-                              {s.project_title}
-                            </a>
-                          </td>
-                          <td style={{ padding: "9px 12px", color: "var(--muted)", width: 160 }}>
-                            {s.programmer ?? "—"}
-                          </td>
-                          <td style={{ padding: "9px 0 9px 12px", color: "var(--muted-light)", fontSize: 12, width: 100 }}>
-                            {s.date ? s.date.substring(0, 10) : "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ))}
-            </div>
-          )}
 
         </div>
       </main>

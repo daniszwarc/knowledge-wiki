@@ -330,6 +330,12 @@ export default function SedPage() {
         sedId={sed.id}
         title="Ask about this SED"
         subtitle="Answers are grounded in this document and related wiki content."
+        suggestedPrompts={[
+          "Find similar issues in other SEDs",
+          "What was the fix?",
+          "Who was the programmer?",
+          "What systems were affected?",
+        ]}
       />
     </div>
   );
