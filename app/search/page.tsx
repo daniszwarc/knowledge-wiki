@@ -25,9 +25,25 @@ interface ArticleResult {
   department: string | null;
   snippet: string;
   rrf_score: number;
+  is_corporate?: boolean;
+  company_name?: string | null;
+  company_number?: number | null;
 }
 
-type SearchResult = RuleResult | ArticleResult;
+interface SedResult {
+  type: "sed";
+  id: string;
+  ticket_number: string;
+  project_title: string;
+  department: string | null;
+  snippet: string;
+  rrf_score: number;
+  is_corporate?: boolean;
+  company_name?: string | null;
+  company_number?: number | null;
+}
+
+type SearchResult = RuleResult | ArticleResult | SedResult;
 
 
 function SearchResults() {
@@ -145,6 +161,14 @@ function SearchResults() {
                     {r.department && (
                       <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, border: "1px solid var(--card-border)", color: "var(--muted-light)", background: "none" }}>
                         {r.department}
+                      </span>
+                    )}
+                    {r.is_corporate && (
+                      <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, background: "#E6F1FB", color: "#185FA5", border: "1px solid #C0D7F3" }}>Corporate</span>
+                    )}
+                    {!r.is_corporate && r.company_name && (
+                      <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, border: "1px solid var(--card-border)", color: "var(--muted-light)", background: "none" }}>
+                        {r.company_number != null ? `${r.company_number} - ${r.company_name}` : r.company_name}
                       </span>
                     )}
                   </div>

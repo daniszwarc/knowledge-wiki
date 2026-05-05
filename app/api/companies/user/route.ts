@@ -10,12 +10,12 @@ export async function GET(req: NextRequest) {
   const session = await validateSession(token);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const rows = await query<{ id: string; name: string }>(
-    `SELECT c.id, c.name
+  const rows = await query<{ id: string; name: string; company_number: number | null }>(
+    `SELECT c.id, c.name, c.company_number
      FROM companies c
      JOIN user_companies uc ON c.id = uc.company_id
      WHERE uc.user_id = $1
-     ORDER BY c.name`,
+     ORDER BY c.company_number ASC`,
     [session.userId]
   );
 

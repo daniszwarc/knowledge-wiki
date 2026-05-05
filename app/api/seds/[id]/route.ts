@@ -41,17 +41,25 @@ export async function GET(
       it_design_content: { type: string; value: string }[] | null;
       unit_testing_content: { type: string; value: string }[] | null;
       acceptance_testing_content: { type: string; value: string }[] | null;
+      is_corporate: boolean;
+      company_name: string | null;
+      company_number: number | null;
     }>(
-      `SELECT id, ticket_number, project_title, department, author, date,
-              affected_systems, business_requirements, it_design, unit_testing,
-              acceptance_testing, source_filename, created_by, created_at, updated_at,
-              inc_ticket, cab_ticket, story_number, td_oms_task,
-              requestor, programmer, contributors, approved_by, company,
-              business_requirements_images, it_design_images,
-              unit_testing_images, acceptance_testing_images,
-              business_requirements_content, it_design_content,
-              unit_testing_content, acceptance_testing_content
-       FROM seds WHERE id = $1`,
+      `SELECT s.id, s.ticket_number, s.project_title, s.department, s.author, s.date,
+              s.affected_systems, s.business_requirements, s.it_design, s.unit_testing,
+              s.acceptance_testing, s.source_filename, s.created_by, s.created_at, s.updated_at,
+              s.inc_ticket, s.cab_ticket, s.story_number, s.td_oms_task,
+              s.requestor, s.programmer, s.contributors, s.approved_by, s.company,
+              s.business_requirements_images, s.it_design_images,
+              s.unit_testing_images, s.acceptance_testing_images,
+              s.business_requirements_content, s.it_design_content,
+              s.unit_testing_content, s.acceptance_testing_content,
+              COALESCE(s.is_corporate, false) AS is_corporate,
+              c.name AS company_name,
+              c.company_number
+       FROM seds s
+       LEFT JOIN companies c ON c.id = s.company_id
+       WHERE s.id = $1`,
       [id]
     );
     if (rows.length === 0) {

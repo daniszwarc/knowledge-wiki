@@ -21,11 +21,19 @@ export async function GET(
       stakeholder_validated: boolean;
       validated_by: string | null;
       validated_at: string | null;
+      is_corporate: boolean;
+      company_name: string | null;
+      company_number: number | null;
     }>(
-      `SELECT id, title, department, workflow_name, content,
-              source_filename, source_url, created_at, created_by,
-              stakeholder_validated, validated_by, validated_at
-       FROM articles WHERE id = $1`,
+      `SELECT a.id, a.title, a.department, a.workflow_name, a.content,
+              a.source_filename, a.source_url, a.created_at, a.created_by,
+              a.stakeholder_validated, a.validated_by, a.validated_at,
+              COALESCE(a.is_corporate, false) AS is_corporate,
+              c.name AS company_name,
+              c.company_number
+       FROM articles a
+       LEFT JOIN companies c ON c.id = a.company_id
+       WHERE a.id = $1`,
       [id]
     );
 

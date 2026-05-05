@@ -63,11 +63,23 @@ export async function GET(
     if (!workflow) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    const narrativeRows = await query<{ process_narrative: string | null; narrative_generated_at: string | null }>(
-      `SELECT process_narrative, narrative_generated_at FROM workflows WHERE id = $1`,
+    const metaRows = await query<{
+      process_narrative: string | null;
+      narrative_generated_at: string | null;
+      is_corporate: boolean;
+      company_name: string | null;
+      company_number: number | null;
+    }>(
+      `SELECT w.process_narrative, w.narrative_generated_at,
+              COALESCE(w.is_corporate, false) AS is_corporate,
+              c.name AS company_name,
+              c.company_number
+       FROM workflows w
+       LEFT JOIN companies c ON c.id = w.company_id
+       WHERE w.id = $1`,
       [id]
     );
-    return NextResponse.json({ ...workflow, ...narrativeRows[0] });
+    return NextResponse.json({ ...workflow, ...metaRows[0] });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

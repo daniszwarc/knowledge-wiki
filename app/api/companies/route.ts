@@ -10,8 +10,8 @@ export async function GET(req: NextRequest) {
   const session = await validateSession(token);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const rows = await query<{ id: string; name: string }>(
-    `SELECT id, name FROM companies ORDER BY name`
+  const rows = await query<{ id: string; name: string; company_number: number | null }>(
+    `SELECT id, name, company_number FROM companies ORDER BY company_number ASC`
   );
 
   return NextResponse.json([ALL_COMPANIES, ...rows]);

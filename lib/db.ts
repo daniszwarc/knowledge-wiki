@@ -64,7 +64,13 @@ export async function getWorkflowWithRules(workflowId: string) {
   return { ...workflows[0], rules };
 }
 
-export async function getAllWorkflowsWithStats() {
+export async function getAllWorkflowsWithStats(companyIds?: string[]) {
+  const filter =
+    companyIds && companyIds.length > 0
+      ? `WHERE (w.company_id IS NULL OR w.is_corporate = true OR w.company_id = ANY($1::uuid[]))`
+      : "";
+  const params = companyIds && companyIds.length > 0 ? [companyIds] : [];
+
   return query<{
     id: string;
     name: string;
@@ -91,7 +97,17 @@ export async function getAllWorkflowsWithStats() {
      FROM workflows w
      LEFT JOIN rules r ON r.workflow_id = w.id
      LEFT JOIN gaps  g ON g.workflow_id = w.id
+     ${filter}
      GROUP BY w.id
-     ORDER BY w.department, w.name`
+     ORDER BY w.department, w.name`,
+    params
   );
+}
+
+export async function getUserCompanyIds(userId: string): Promise<string[]> {
+  const rows = await query<{ company_id: string }>(
+    `SELECT company_id FROM user_companies WHERE user_id = $1`,
+    [userId]
+  );
+  return rows.map((r) => r.company_id);
 }

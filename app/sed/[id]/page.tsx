@@ -30,6 +30,9 @@ interface Sed {
   contributors: string | null;
   approved_by: string | null;
   company: string | null;
+  is_corporate: boolean;
+  company_name: string | null;
+  company_number: number | null;
   business_requirements_images: string[] | null;
   it_design_images: string[] | null;
   unit_testing_images: string[] | null;
@@ -180,7 +183,7 @@ export default function SedPage() {
         <div style={{ maxWidth: 720, width: "100%", padding: "48px 32px 80px", overflowWrap: "break-word", wordBreak: "break-word" }}>
 
           {/* Department badge */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
             {sed.department && (
               <span style={{
                 fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99,
@@ -195,6 +198,16 @@ export default function SedPage() {
             }}>
               SED
             </span>
+            {sed.is_corporate && (
+              <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, background: "#E6F1FB", color: "#185FA5", border: "1px solid #C0D7F3" }}>
+                Corporate
+              </span>
+            )}
+            {!sed.is_corporate && sed.company_name && (
+              <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, border: "1px solid var(--card-border)", background: "var(--sidebar-bg)", color: "var(--muted)" }}>
+                {sed.company_number != null ? `${sed.company_number} - ${sed.company_name}` : sed.company_name}
+              </span>
+            )}
           </div>
 
           {/* Title */}

@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { NextRequest, NextResponse } from "next/server";
+import { query, getUserCompanyIds } from "@/lib/db";
+import { validateSession } from "@/lib/auth";
 
 interface NavWorkflow {
   id: string;
@@ -33,28 +34,47 @@ function groupByDepartment<T extends { department: string | null }>(
   );
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const token = req.cookies.get("wiki_session")?.value;
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const session = await validateSession(token);
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const bypassFilter = ["admin", "super_admin", "developer"].includes(session.role);
+    const companyIds = bypassFilter ? null : await getUserCompanyIds(session.userId);
+    const contentFilter = bypassFilter
+      ? ""
+      : "AND (company_id IS NULL OR is_corporate = true OR company_id = ANY($1::uuid[]))";
+    const contentParams: unknown[] = bypassFilter ? [] : [companyIds ?? []];
+    const wfFilter = bypassFilter
+      ? ""
+      : "AND (w.company_id IS NULL OR w.is_corporate = true OR w.company_id = ANY($1::uuid[]))";
+
     const [workflows, howToGuides, trainingMaterial] = await Promise.all([
       query<NavWorkflow>(
         `SELECT w.id, w.name, w.department, w.completeness_score,
                 COUNT(r.id) as rule_count
          FROM workflows w
          LEFT JOIN rules r ON r.workflow_id = w.id
+         WHERE 1=1 ${wfFilter}
          GROUP BY w.id
-         ORDER BY w.department, w.name`
+         ORDER BY w.department, w.name`,
+        contentParams
       ),
       query<NavArticle>(
         `SELECT id, title, department, stakeholder_validated
          FROM articles
-         WHERE 'how_to_guide' = ANY(COALESCE(appears_as, ARRAY['how_to_guide']))
-         ORDER BY department, title`
+         WHERE 'how_to_guide' = ANY(COALESCE(appears_as, ARRAY['how_to_guide'])) ${contentFilter}
+         ORDER BY department, title`,
+        contentParams
       ),
       query<NavArticle>(
         `SELECT id, title, department, stakeholder_validated
          FROM articles
-         WHERE 'training_material' = ANY(COALESCE(appears_as, ARRAY['how_to_guide']::text[]))
-         ORDER BY department, title`
+         WHERE 'training_material' = ANY(COALESCE(appears_as, ARRAY['how_to_guide']::text[])) ${contentFilter}
+         ORDER BY department, title`,
+        contentParams
       ),
     ]);
 

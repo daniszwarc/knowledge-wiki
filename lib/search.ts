@@ -57,7 +57,7 @@ type SedRow = {
   department: string | null; snippet: string;
 };
 
-export async function hybridSearch(queryText: string): Promise<SearchResult[]> {
+export async function hybridSearch(queryText: string, companyIds?: string[]): Promise<SearchResult[]> {
   let vectorLiteral: string | null = null;
   try {
     const embedding = await embed(queryText);
@@ -65,6 +65,15 @@ export async function hybridSearch(queryText: string): Promise<SearchResult[]> {
   } catch {
     // Ollama unavailable — fall back to FTS-only
   }
+
+  // Company filter fragment — appended to WHERE clauses when companyIds provided
+  const cf = companyIds
+    ? "AND (company_id IS NULL OR is_corporate = true OR company_id = ANY($2::uuid[]))"
+    : "";
+  const wfCf = companyIds
+    ? "AND (w.company_id IS NULL OR w.is_corporate = true OR w.company_id = ANY($2::uuid[]))"
+    : "";
+  const cfParams = (base: unknown[]) => (companyIds ? [...base, companyIds] : base);
 
   // ── Rule FTS ──────────────────────────────────────────────────────────────
   const ruleFts = await query<RuleRow>(
@@ -83,13 +92,13 @@ export async function hybridSearch(queryText: string): Promise<SearchResult[]> {
      FROM rules r
      JOIN workflows w ON w.id = r.workflow_id
      WHERE to_tsvector('english', coalesce(r.summary,'') || ' ' || coalesce(r.detail,''))
-           @@ plainto_tsquery('english', $1)
+           @@ plainto_tsquery('english', $1) ${wfCf}
      ORDER BY ts_rank(
        to_tsvector('english', coalesce(r.summary,'') || ' ' || coalesce(r.detail,'')),
        plainto_tsquery('english', $1)
      ) DESC
      LIMIT 20`,
-    [queryText]
+    cfParams([queryText])
   );
 
   // ── Rule vector ───────────────────────────────────────────────────────────
@@ -109,10 +118,10 @@ export async function hybridSearch(queryText: string): Promise<SearchResult[]> {
            r.owner_email
          FROM rules r
          JOIN workflows w ON w.id = r.workflow_id
-         WHERE r.embedding IS NOT NULL
+         WHERE r.embedding IS NOT NULL ${wfCf}
          ORDER BY r.embedding <=> $1::vector
          LIMIT 20`,
-        [vectorLiteral]
+        cfParams([vectorLiteral])
       )
     : [];
 
@@ -122,13 +131,13 @@ export async function hybridSearch(queryText: string): Promise<SearchResult[]> {
             left(content, 400) AS content
      FROM articles
      WHERE to_tsvector('english', coalesce(title,'') || ' ' || coalesce(content,''))
-           @@ plainto_tsquery('english', $1)
+           @@ plainto_tsquery('english', $1) ${cf}
      ORDER BY ts_rank(
        to_tsvector('english', coalesce(title,'') || ' ' || coalesce(content,'')),
        plainto_tsquery('english', $1)
      ) DESC
      LIMIT 20`,
-    [queryText]
+    cfParams([queryText])
   );
 
   // ── Article vector ────────────────────────────────────────────────────────
@@ -137,10 +146,10 @@ export async function hybridSearch(queryText: string): Promise<SearchResult[]> {
         `SELECT id AS article_id, title, department,
                 left(content, 400) AS content
          FROM articles
-         WHERE embedding IS NOT NULL
+         WHERE embedding IS NOT NULL ${cf}
          ORDER BY embedding <=> $1::vector
          LIMIT 20`,
-        [vectorLiteral]
+        cfParams([vectorLiteral])
       )
     : [];
 
@@ -153,7 +162,7 @@ export async function hybridSearch(queryText: string): Promise<SearchResult[]> {
              coalesce(ticket_number,'') || ' ' ||
              coalesce(project_title,'') || ' ' ||
              coalesce(business_requirements,''))
-           @@ plainto_tsquery('english', $1)
+           @@ plainto_tsquery('english', $1) ${cf}
      ORDER BY ts_rank(
        to_tsvector('english',
          coalesce(ticket_number,'') || ' ' ||
@@ -162,7 +171,7 @@ export async function hybridSearch(queryText: string): Promise<SearchResult[]> {
        plainto_tsquery('english', $1)
      ) DESC
      LIMIT 20`,
-    [queryText]
+    cfParams([queryText])
   );
 
   // ── SED vector ────────────────────────────────────────────────────────────
@@ -171,10 +180,10 @@ export async function hybridSearch(queryText: string): Promise<SearchResult[]> {
         `SELECT id, ticket_number, project_title, department,
                 left(coalesce(business_requirements, ''), 200) AS snippet
          FROM seds
-         WHERE embedding IS NOT NULL
+         WHERE embedding IS NOT NULL ${cf}
          ORDER BY embedding <=> $1::vector
          LIMIT 20`,
-        [vectorLiteral]
+        cfParams([vectorLiteral])
       )
     : [];
 

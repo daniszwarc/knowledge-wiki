@@ -32,6 +32,9 @@ interface Workflow {
   rules: Rule[];
   process_narrative: string | null;
   narrative_generated_at: string | null;
+  is_corporate: boolean;
+  company_name: string | null;
+  company_number: number | null;
 }
 
 interface RefArticle {
@@ -291,15 +294,26 @@ export default function WorkflowPage() {
 
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
             <div>
-              <span style={{
-                display: "inline-block", fontSize: 11, fontWeight: 500,
-                padding: "2px 8px", borderRadius: 99,
-                border: "1px solid var(--card-border)",
-                background: "var(--sidebar-bg)", color: "var(--muted)",
-                marginBottom: 8,
-              }}>
-                {workflow.department}
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+                <span style={{
+                  display: "inline-block", fontSize: 11, fontWeight: 500,
+                  padding: "2px 8px", borderRadius: 99,
+                  border: "1px solid var(--card-border)",
+                  background: "var(--sidebar-bg)", color: "var(--muted)",
+                }}>
+                  {workflow.department}
+                </span>
+                {workflow.is_corporate && (
+                  <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, background: "#E6F1FB", color: "#185FA5", border: "1px solid #C0D7F3" }}>
+                    Corporate
+                  </span>
+                )}
+                {!workflow.is_corporate && workflow.company_name && (
+                  <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, border: "1px solid var(--card-border)", background: "var(--sidebar-bg)", color: "var(--muted)" }}>
+                    {workflow.company_number != null ? `${workflow.company_number} - ${workflow.company_name}` : workflow.company_name}
+                  </span>
+                )}
+              </div>
               <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--foreground)", lineHeight: 1.3, marginBottom: 8 }}>
                 How does {workflow.name.toLowerCase()} work?
               </h1>

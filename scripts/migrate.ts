@@ -203,11 +203,11 @@ async function migrate() {
     `);
     await client.query(`ALTER TABLE articles ALTER COLUMN appears_as SET DEFAULT ARRAY['how_to_guide']`);
 
-    // Expand role CHECK constraint to include 'developer'
+    // Expand role CHECK constraint to include 'developer', 'super_admin', 'company_admin'
     await client.query(`ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check`);
     await client.query(`
       ALTER TABLE users ADD CONSTRAINT users_role_check
-        CHECK (role IN ('viewer', 'validator', 'editor', 'admin', 'developer'))
+        CHECK (role IN ('viewer', 'validator', 'editor', 'admin', 'developer', 'super_admin', 'company_admin'))
     `);
 
     // seds table
@@ -305,7 +305,10 @@ async function migrate() {
     await client.query(`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id)`);
     await client.query(`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS is_corporate BOOLEAN DEFAULT false`);
 
-    // Seed initial companies
+    // Add company_number reference field
+    await client.query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS company_number INTEGER UNIQUE`);
+
+    // Seed initial companies (legacy placeholders)
     await client.query(`
       INSERT INTO companies (name) VALUES
         ('APi Group Corporate'),
@@ -313,6 +316,66 @@ async function migrate() {
         ('Vipond')
       ON CONFLICT (name) DO NOTHING
     `);
+
+    // Seed APi Group subsidiary companies
+    const seedResult = await client.query(`
+      INSERT INTO companies (company_number, name) VALUES
+        (1,   'API Group Inc.'),
+        (3,   'API Real Estate LLC'),
+        (4,   'API Group Corp.'),
+        (5,   'API Group DE Inc.'),
+        (7,   'Northland Post Sale'),
+        (9,   'Olsen Fire Protection'),
+        (10,  'A.P.I. Incorporated'),
+        (12,  'NYCO Inc.'),
+        (14,  'Classic Industrial Services'),
+        (15,  'Industrial Contractors'),
+        (19,  'Tessiers Inc.'),
+        (20,  'Jamar Company'),
+        (23,  'United Piping Inc.'),
+        (25,  'Viking Auto Sprinkler Co.'),
+        (26,  'VFP Fire Systems Inc.'),
+        (27,  'API National Service Group'),
+        (31,  'K&M Fire NYC LLC'),
+        (34,  'Island Fire Sprinkler Inc.'),
+        (41,  'International Fire'),
+        (43,  'Security Fire Protection'),
+        (46,  'USA Fire Protection Inc.'),
+        (48,  'API Intl LLC'),
+        (50,  'Lejeune Steel Company'),
+        (55,  'API Group Life Safety US'),
+        (57,  'Nexus'),
+        (65,  'API Garage Door Inc.'),
+        (67,  'API International Hong Kong'),
+        (68,  'API International Macau'),
+        (69,  'Residential Design LLC'),
+        (72,  'Jomax Construction'),
+        (73,  '3S Inc.'),
+        (74,  'K&M Fire Protection'),
+        (80,  'Vipond Inc.'),
+        (81,  'M&N Energy Services Ltd.'),
+        (82,  'Direct Fire Protection'),
+        (83,  'M&N Construction Ltd.'),
+        (84,  'Forbes Fire Protection'),
+        (86,  'API Group Holding Canada'),
+        (87,  'Train Oilfield Services'),
+        (88,  'CanAm Fire Protection Inc.'),
+        (89,  'Atlantic Alarm & Sound'),
+        (90,  'Chubb Fire & Security Ltd.'),
+        (101, 'API Group Swiss Finco LM'),
+        (102, 'API Group Finance Inc.'),
+        (103, 'API Group Finco Limited'),
+        (104, 'API Group Finco Ltd US'),
+        (118, 'Tenet'),
+        (130, 'Summit Pipeline Services'),
+        (134, 'Chubb Canada'),
+        (135, 'API NSG Canada'),
+        (140, 'API Aviation LLC'),
+        (149, 'Architekton Partners'),
+        (155, 'Kandor Company')
+      ON CONFLICT (name) DO NOTHING
+    `);
+    console.log(`Inserted ${seedResult.rowCount} new subsidiary companies`);
 
     // Clear existing articles
     await client.query(`DELETE FROM articles`);

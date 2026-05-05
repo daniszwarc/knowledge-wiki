@@ -18,6 +18,9 @@ interface Article {
   stakeholder_validated: boolean;
   validated_by: string | null;
   validated_at: string | null;
+  is_corporate: boolean;
+  company_name: string | null;
+  company_number: number | null;
 }
 
 function prepareContent(raw: string): string {
@@ -164,13 +167,23 @@ export default function ArticlePage() {
       <div style={{ maxWidth: 720, width: "100%", padding: "48px 32px 80px", overflowWrap: "break-word", wordBreak: "break-word" }}>
 
         {/* Badges */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
           {article.department && (
             <span style={{
               fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99,
               border: "1px solid var(--card-border)", background: "var(--sidebar-bg)", color: "var(--muted)",
             }}>
               {article.department}
+            </span>
+          )}
+          {article.is_corporate && (
+            <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, background: "#E6F1FB", color: "#185FA5", border: "1px solid #C0D7F3" }}>
+              Corporate
+            </span>
+          )}
+          {!article.is_corporate && article.company_name && (
+            <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, border: "1px solid var(--card-border)", background: "var(--sidebar-bg)", color: "var(--muted)" }}>
+              {article.company_number != null ? `${article.company_number} - ${article.company_name}` : article.company_name}
             </span>
           )}
           {validated && (

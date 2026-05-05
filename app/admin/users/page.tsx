@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface User {
   id: string;
@@ -14,14 +14,171 @@ interface User {
 interface Company {
   id: string;
   name: string;
+  company_number: number | null;
 }
 
-const ROLES = ["viewer", "validator", "editor", "admin", "developer"];
+const ROLES = ["viewer", "validator", "editor", "admin", "developer", "super_admin", "company_admin"];
+const RESTRICTED_ROLES = ["admin", "super_admin", "developer"];
+
+function CompanyMultiSelect({
+  companies,
+  selected,
+  onChange,
+}: {
+  companies: Company[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
+
+  const selectedCompanies = companies.filter((c) => selected.includes(c.id));
+  const unselectedFiltered = companies
+    .filter((c) => !selected.includes(c.id))
+    .filter((c) => {
+      const q = query.toLowerCase();
+      return c.name.toLowerCase().includes(q) || String(c.company_number ?? "").includes(q);
+    });
+
+  function remove(id: string) {
+    onChange(selected.filter((s) => s !== id));
+  }
+
+  function toggle(id: string) {
+    onChange(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id]);
+  }
+
+  function selectAll() {
+    onChange([...selected, ...unselectedFiltered.map((c) => c.id)]);
+  }
+
+  function clearAll() {
+    onChange([]);
+  }
+
+  return (
+    <div ref={wrapperRef} style={{ position: "relative" }}>
+      {selectedCompanies.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 6 }}>
+          {selectedCompanies.map((c) => (
+            <span
+              key={c.id}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 4,
+                padding: "2px 7px 2px 8px",
+                background: "var(--sidebar-bg)",
+                border: "0.5px solid var(--card-border)",
+                borderRadius: 99,
+                fontSize: 12,
+                color: "var(--foreground)",
+              }}
+            >
+              {c.company_number != null ? `${c.company_number} - ${c.name}` : c.name}
+              <button
+                type="button"
+                onClick={() => remove(c.id)}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  padding: "0 0 0 2px", fontSize: 14, lineHeight: 1,
+                  color: "var(--muted)", display: "flex", alignItems: "center",
+                }}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <input
+        className="search-input"
+        type="text"
+        value={query}
+        placeholder="Search and select companies..."
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        style={{ width: "100%", padding: "7px 10px", fontSize: 13, borderRadius: 6, boxSizing: "border-box" }}
+      />
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "100%", left: 0, right: 0,
+          marginTop: 4, minWidth: "400px",
+          background: "var(--background)", border: "0.5px solid var(--card-border)",
+          borderRadius: "var(--border-radius-md)", zIndex: 1000,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+        }}>
+          <div style={{
+            display: "flex", gap: 12, padding: "6px 12px",
+            borderBottom: "1px solid var(--card-border)",
+          }}>
+            <button
+              type="button"
+              onClick={selectAll}
+              style={{ fontSize: 11, color: "var(--muted)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+            >
+              Select all
+            </button>
+            <button
+              type="button"
+              onClick={clearAll}
+              style={{ fontSize: 11, color: "var(--muted)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+            >
+              Clear all
+            </button>
+          </div>
+
+          <div style={{ maxHeight: "320px", overflowY: "auto" }}>
+            {unselectedFiltered.length === 0 ? (
+              <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--muted)" }}>
+                {query ? "No matches" : "All companies selected"}
+              </div>
+            ) : (
+              unselectedFiltered.map((c) => (
+                <label
+                  key={c.id}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--sidebar-bg)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "6px 12px", fontSize: 13, color: "var(--foreground)",
+                    cursor: "pointer", background: "transparent",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    onChange={() => toggle(c.id)}
+                    style={{ accentColor: "var(--foreground)", flexShrink: 0 }}
+                  />
+                  {c.company_number != null ? `${c.company_number} - ${c.name}` : c.name}
+                </label>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [selfId, setSelfId] = useState<string | null>(null);
+  const [selfRole, setSelfRole] = useState<string>("");
+  const [selfCompanyIds, setSelfCompanyIds] = useState<string[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -32,7 +189,6 @@ export default function AdminUsersPage() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
 
-  // Company editor panel state
   const [editCompaniesUserId, setEditCompaniesUserId] = useState<string | null>(null);
   const [editCompaniesSelected, setEditCompaniesSelected] = useState<string[]>([]);
   const [editCompaniesSaving, setEditCompaniesSaving] = useState(false);
@@ -45,8 +201,12 @@ export default function AdminUsersPage() {
     ]).then(([userList, me, allCompanies]) => {
       setUsers(userList);
       setSelfId(me.id);
-      // Filter out the virtual "all" entry — that's a content tag, not a user assignment
-      setCompanies((allCompanies as Company[]).filter((c) => c.id !== "all"));
+      setSelfRole(me.role ?? "");
+      setSelfCompanyIds((me.companies ?? []).map((c: Company) => c.id));
+      const sorted = (allCompanies as Company[])
+        .filter((c) => c.id !== "all" && c.company_number != null)
+        .sort((a, b) => (a.company_number ?? 0) - (b.company_number ?? 0));
+      setCompanies(sorted);
       setLoading(false);
     });
   }, []);
@@ -118,14 +278,6 @@ export default function AdminUsersPage() {
     setEditCompaniesUserId(null);
   }
 
-  function toggleNewCompany(id: string) {
-    setNewCompanies((prev) => prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]);
-  }
-
-  function toggleEditCompany(id: string) {
-    setEditCompaniesSelected((prev) => prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]);
-  }
-
   function fmt(d: string | null) {
     if (!d) return "—";
     return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -171,7 +323,7 @@ export default function AdminUsersPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                 <label style={{ fontSize: 11, color: "var(--muted)" }}>Role</label>
                 <select value={newRole} onChange={(e) => setNewRole(e.target.value)} className="search-input" style={{ padding: "7px 10px", fontSize: 13, borderRadius: 6 }}>
-                  {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                  {ROLES.filter((r) => selfRole === "company_admin" ? !RESTRICTED_ROLES.includes(r) : true).map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
               <button type="submit" disabled={addLoading} style={{ padding: "8px 16px", fontSize: 13, fontWeight: 500, borderRadius: 7, border: "none", background: "var(--foreground)", color: "var(--background)", cursor: "pointer" }}>
@@ -184,19 +336,11 @@ export default function AdminUsersPage() {
                 <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
                   Company access
                 </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {companies.map((c) => (
-                    <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--foreground)", cursor: "pointer" }}>
-                      <input
-                        type="checkbox"
-                        checked={newCompanies.includes(c.id)}
-                        onChange={() => toggleNewCompany(c.id)}
-                        style={{ accentColor: "var(--foreground)" }}
-                      />
-                      {c.name}
-                    </label>
-                  ))}
-                </div>
+                <CompanyMultiSelect
+                  companies={selfRole === "company_admin" ? companies.filter((c) => selfCompanyIds.includes(c.id)) : companies}
+                  selected={newCompanies}
+                  onChange={setNewCompanies}
+                />
               </div>
             )}
 
@@ -207,7 +351,7 @@ export default function AdminUsersPage() {
         {loading ? (
           <p style={{ color: "var(--muted)", fontSize: 13 }}>Loading…</p>
         ) : (
-          <div style={{ border: "1px solid var(--card-border)", borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ border: "1px solid var(--card-border)", borderRadius: 10, overflow: "visible" }}>
             {/* Table header */}
             <div style={{
               display: "grid", gridTemplateColumns: "1fr 100px 80px 120px 160px",
@@ -300,18 +444,12 @@ export default function AdminUsersPage() {
                     {companies.length === 0 ? (
                       <p style={{ fontSize: 12, color: "var(--muted-light)", margin: "0 0 12px" }}>No companies configured.</p>
                     ) : (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
-                        {companies.map((c) => (
-                          <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--foreground)", cursor: "pointer" }}>
-                            <input
-                              type="checkbox"
-                              checked={editCompaniesSelected.includes(c.id)}
-                              onChange={() => toggleEditCompany(c.id)}
-                              style={{ accentColor: "var(--foreground)" }}
-                            />
-                            {c.name}
-                          </label>
-                        ))}
+                      <div style={{ marginBottom: 14 }}>
+                        <CompanyMultiSelect
+                          companies={selfRole === "company_admin" ? companies.filter((c) => selfCompanyIds.includes(c.id)) : companies}
+                          selected={editCompaniesSelected}
+                          onChange={setEditCompaniesSelected}
+                        />
                       </div>
                     )}
                     <div style={{ display: "flex", gap: 8 }}>
