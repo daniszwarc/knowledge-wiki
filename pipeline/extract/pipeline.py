@@ -53,10 +53,16 @@ def extract_from_chunk(state: PipelineState) -> PipelineState:
     )
 
     try:
+        headers = {"Content-Type": "application/json"}
+        api_key = os.getenv("OLLAMA_API_KEY", "")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
         resp = httpx.post(
             f"{OLLAMA_BASE_URL}/api/generate",
+            headers=headers,
             json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
-            timeout=25.0,
+            timeout=60.0,
         )
         resp.raise_for_status()
         content = resp.json().get("response", "").strip()

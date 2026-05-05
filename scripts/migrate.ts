@@ -380,6 +380,27 @@ async function migrate() {
     // Clear existing articles
     await client.query(`DELETE FROM articles`);
 
+    // Migrate embedding columns from vector(768) to vector(4096)
+    // Clear embeddings first — 768-dim vectors are incompatible with 4096-dim
+    await client.query(`UPDATE rules SET embedding = NULL`);
+    await client.query(`UPDATE articles SET embedding = NULL`);
+    await client.query(`UPDATE seds SET embedding = NULL`);
+
+    // Drop existing ivfflat indexes before altering column type
+    // (ivfflat and hnsw both cap at 2000 dims — indexes are skipped for 4096-dim vectors;
+    //  searches use exact KNN which is accurate but O(n). Re-add indexes if you upgrade
+    //  to a pgvector build that supports >2000 dimensions.)
+    await client.query(`DROP INDEX IF EXISTS rules_embedding_idx`);
+    await client.query(`DROP INDEX IF EXISTS articles_embedding_idx`);
+    await client.query(`DROP INDEX IF EXISTS seds_embedding_idx`);
+
+    // Alter column types to 4096 dimensions
+    await client.query(`ALTER TABLE rules ALTER COLUMN embedding TYPE vector(4096)`);
+    await client.query(`ALTER TABLE articles ALTER COLUMN embedding TYPE vector(4096)`);
+    await client.query(`ALTER TABLE seds ALTER COLUMN embedding TYPE vector(4096)`);
+
+    console.log("Embedding columns migrated to vector(4096) — no ANN indexes (pgvector ivfflat/hnsw cap at 2000 dims)");
+
     await client.query("COMMIT");
     console.log("Migration completed successfully");
   } catch (err) {

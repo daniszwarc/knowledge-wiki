@@ -124,8 +124,13 @@ def insert_rule(
 
 def call_embed(rule_id: str, text: str) -> bool:
     try:
+        api_key = os.getenv("OLLAMA_API_KEY", "")
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         response = httpx.post(
             f"{WIKI_API_URL}/api/embed",
+            headers=headers,
             json={"ruleId": rule_id, "text": text},
             timeout=30.0,
         )
@@ -179,8 +184,13 @@ def insert_article(
 
 def call_article_embed(article_id: str, text: str) -> bool:
     try:
+        api_key = os.getenv("OLLAMA_API_KEY", "")
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         response = httpx.post(
             f"{WIKI_API_URL}/api/articles/embed",
+            headers=headers,
             json={"articleId": article_id, "text": text},
             timeout=60.0,
         )
@@ -274,8 +284,13 @@ def upsert_sed(data: dict, created_by: str) -> str:
 def call_sed_embed(sed_id: str, text: str) -> None:
     """Call the wiki embed endpoint for a SED."""
     try:
+        api_key = os.getenv("OLLAMA_API_KEY", "")
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         httpx.post(
             f"{WIKI_API_URL}/api/seds/{sed_id}/embed",
+            headers=headers,
             json={"sedId": sed_id, "text": text},
             timeout=60.0,
         )
