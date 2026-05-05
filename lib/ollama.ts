@@ -2,7 +2,7 @@ import OpenAI from "openai";
 
 function getClient() {
   return new OpenAI({
-    baseURL: process.env.OLLAMA_BASE_URL ?? "http://localhost:11434/v1",
+    baseURL: (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/v1$/, '') + "/v1",
     apiKey: "ollama",
   });
 }
@@ -34,12 +34,20 @@ export async function chat(
 }
 
 export async function embed(text: string): Promise<number[]> {
-  const client = getClient();
-
-  const response = await client.embeddings.create({
-    model: process.env.OLLAMA_EMBED_MODEL ?? "nomic-embed-text",
-    input: text,
-  });
-
-  return response.data[0].embedding;
+  const baseUrl = process.env.OLLAMA_BASE_URL?.replace(/\/v1$/, '') ?? "http://localhost:11434"
+  const model = process.env.OLLAMA_EMBED_MODEL ?? "nomic-embed-text"
+  const res = await fetch(`${baseUrl}/api/embed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model, input: text }),
+  })
+  if (!res.ok) {
+    throw new Error(`${res.status} ${await res.text()}`)
+  }
+  const data = await res.json()
+  const vector = data.embeddings?.[0] ?? data.embedding
+  if (!vector || vector.length === 0) {
+    throw new Error("Empty embedding returned")
+  }
+  return vector
 }

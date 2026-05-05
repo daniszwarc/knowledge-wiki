@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { embed } from "@/lib/ollama";
 
 interface SearchRow {
   id: string;
@@ -21,20 +22,7 @@ export async function POST(req: Request) {
       return Response.json({ error: "Query must be at least 20 characters." }, { status: 400 });
     }
 
-    // Step 1: embed the query
-    const embedRes = await fetch(`${process.env.OLLAMA_BASE_URL}/api/embed`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: process.env.OLLAMA_EMBED_MODEL ?? "nomic-embed-text",
-        input: userQuery.trim(),
-      }),
-    });
-    if (!embedRes.ok) {
-      return Response.json({ error: "Embedding service unavailable." }, { status: 502 });
-    }
-    const embedData = await embedRes.json();
-    const vector: number[] = embedData.embeddings?.[0] ?? embedData.embedding;
+    const vector = await embed(userQuery.trim());
     if (!vector || vector.length === 0) {
       return Response.json({ error: "Failed to generate embedding." }, { status: 502 });
     }
@@ -72,13 +60,14 @@ export async function POST(req: Request) {
       relevant.map(async (r) => {
         try {
           const prompt =
-            `Given this SED content, write exactly 2 sentences:\n` +
-            `What the issue was\n` +
-            `How it was fixed\n\n` +
-            `SED title: ${r.project_title}\n` +
+            `Read this SED and write exactly 2 sentences with no labels or preamble:\n` +
+            `Sentence 1: describe the issue in plain language.\n` +
+            `Sentence 2: describe how it was fixed in plain language.\n` +
+            `Do not write "The issue was:" or "How it was fixed:" or any other label.\n` +
+            `Do not repeat the title. Just 2 plain sentences.\n\n` +
+            `Title: ${r.project_title}\n` +
             `Business requirements: ${r.business_requirements ?? ""}\n` +
-            `IT Design: ${r.it_design ?? ""}\n\n` +
-            `Return only the 2 sentences. No preamble.`;
+            `IT Design: ${r.it_design ?? ""}\n`;
           const llmRes = await fetch(`${process.env.OLLAMA_BASE_URL}/api/generate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
