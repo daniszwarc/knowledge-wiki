@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   const err = requireAdmin(req);
   if (err) return err;
 
-  const { email, password, role } = await req.json();
+  const { email, password, role, companies } = await req.json();
   if (!email || !password || !role) {
     return NextResponse.json({ error: "email, password, and role required" }, { status: 400 });
   }
@@ -47,5 +47,15 @@ export async function POST(req: NextRequest) {
     [email.toLowerCase().trim(), hash, role, createdBy]
   );
 
-  return NextResponse.json({ id: rows[0].id }, { status: 201 });
+  const userId = rows[0].id;
+  if (Array.isArray(companies) && companies.length > 0) {
+    for (const companyId of companies) {
+      await query(
+        `INSERT INTO user_companies (user_id, company_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [userId, companyId]
+      );
+    }
+  }
+
+  return NextResponse.json({ id: userId }, { status: 201 });
 }

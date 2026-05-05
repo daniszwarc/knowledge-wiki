@@ -273,6 +273,47 @@ async function migrate() {
     await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS unit_testing_content JSONB DEFAULT '[]'`);
     await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS acceptance_testing_content JSONB DEFAULT '[]'`);
 
+    // Companies table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS companies (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name       VARCHAR(255) UNIQUE NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        created_by VARCHAR(255)
+      )
+    `);
+
+    // Junction table: users belong to one or more companies
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_companies (
+        user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        PRIMARY KEY (user_id, company_id)
+      )
+    `);
+
+    // Add company_id / is_corporate to content tables
+    await client.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id)`);
+    await client.query(`ALTER TABLE articles ADD COLUMN IF NOT EXISTS is_corporate BOOLEAN DEFAULT false`);
+
+    await client.query(`ALTER TABLE rules ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id)`);
+    await client.query(`ALTER TABLE rules ADD COLUMN IF NOT EXISTS is_corporate BOOLEAN DEFAULT false`);
+
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id)`);
+    await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS is_corporate BOOLEAN DEFAULT false`);
+
+    await client.query(`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id)`);
+    await client.query(`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS is_corporate BOOLEAN DEFAULT false`);
+
+    // Seed initial companies
+    await client.query(`
+      INSERT INTO companies (name) VALUES
+        ('APi Group Corporate'),
+        ('Western States'),
+        ('Vipond')
+      ON CONFLICT (name) DO NOTHING
+    `);
+
     // Clear existing articles
     await client.query(`DELETE FROM articles`);
 

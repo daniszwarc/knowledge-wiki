@@ -18,6 +18,8 @@ export async function POST(req: NextRequest) {
   const file = formData.get("file") as File | null;
   const workflowName = (formData.get("workflow_name") as string | null)?.trim();
   const department = (formData.get("department") as string | null)?.trim();
+  const isCorporate = formData.get("is_corporate") === "true";
+  const companyId = (formData.get("company_id") as string | null) || null;
 
   if (!file || !workflowName || !department) {
     return NextResponse.json({ error: "file, workflow_name, and department are required" }, { status: 400 });
@@ -37,21 +39,33 @@ export async function POST(req: NextRequest) {
   }
 
   const json = await pipelineRes.json();
+  const workflowId: string | null = json.workflow_id ?? null;
+
+  if (workflowId) {
+    await query(
+      `UPDATE workflows SET company_id = $1, is_corporate = $2 WHERE id = $3`,
+      [companyId, isCorporate, workflowId]
+    );
+    await query(
+      `UPDATE rules SET company_id = $1, is_corporate = $2 WHERE workflow_id = $3`,
+      [companyId, isCorporate, workflowId]
+    );
+  }
 
   await query(
     `INSERT INTO audit_log (table_name, record_id, action, changed_by, new_value)
      VALUES ($1, $2, $3, $4, $5)`,
     [
       "workflows",
-      json.workflow_id ?? null,
+      workflowId,
       "INSERT",
       session.email,
-      JSON.stringify({ workflow_name: workflowName, department, rules_extracted: json.rules_extracted }),
+      JSON.stringify({ workflow_name: workflowName, department, rules_extracted: json.rules_extracted, company_id: companyId, is_corporate: isCorporate }),
     ]
   );
 
   return NextResponse.json({
-    workflow_id: json.workflow_id ?? null,
+    workflow_id: workflowId,
     workflow_name: workflowName,
     rules_extracted: json.rules_extracted ?? 0,
     article_id: json.article_id ?? null,

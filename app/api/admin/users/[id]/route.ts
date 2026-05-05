@@ -29,6 +29,16 @@ export async function PATCH(
     );
   }
 
+  if (Array.isArray(body.companies)) {
+    await query(`DELETE FROM user_companies WHERE user_id = $1`, [id]);
+    for (const companyId of body.companies) {
+      await query(
+        `INSERT INTO user_companies (user_id, company_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [id, companyId]
+      );
+    }
+  }
+
   return NextResponse.json({ success: true });
 }
 

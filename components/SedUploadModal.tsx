@@ -1,21 +1,34 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface SedUploadModalProps {
   onClose: () => void;
   onSuccess: () => void;
 }
 
+interface Company {
+  id: string;
+  name: string;
+}
+
 export function SedUploadModal({ onClose, onSuccess }: SedUploadModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [ownerName, setOwnerName] = useState("");
   const [ownerEmail, setOwnerEmail] = useState("");
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [selectedCompany, setSelectedCompany] = useState("all");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ ticket_number: string; project_title: string } | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetch("/api/companies/user")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: Company[]) => setCompanies(data));
+  }, []);
 
   function handleFile(f: File) {
     if (!f.name.toLowerCase().endsWith(".docx")) {
@@ -35,6 +48,12 @@ export function SedUploadModal({ onClose, onSuccess }: SedUploadModalProps) {
       fd.append("file", file);
       fd.append("owner_name", ownerName.trim());
       fd.append("owner_email", ownerEmail.trim());
+      if (selectedCompany === "all") {
+        fd.append("is_corporate", "true");
+      } else {
+        fd.append("is_corporate", "false");
+        fd.append("company_id", selectedCompany);
+      }
 
       const res = await fetch("/api/seds/upload", { method: "POST", body: fd });
       if (!res.ok) {
@@ -174,6 +193,25 @@ export function SedUploadModal({ onClose, onSuccess }: SedUploadModalProps) {
                 style={{ width: "100%", fontSize: 13, padding: "6px 10px", borderRadius: 6, boxSizing: "border-box" }}
               />
             </div>
+
+            {/* Company */}
+            {companies.length > 0 && (
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Company
+                </label>
+                <select
+                  className="search-input"
+                  value={selectedCompany}
+                  onChange={(e) => setSelectedCompany(e.target.value)}
+                  style={{ width: "100%", fontSize: 13, padding: "6px 10px", borderRadius: 6, boxSizing: "border-box" }}
+                >
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {error && (
               <p style={{ fontSize: 12, color: "#b91c1c", margin: 0 }}>{error}</p>

@@ -10,6 +10,11 @@ interface Me {
   role: string;
 }
 
+interface Company {
+  id: string;
+  name: string;
+}
+
 type DocType = "process" | "article" | "sed";
 
 type UploadResult =
@@ -39,11 +44,13 @@ export default function UploadPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [selectedType, setSelectedType] = useState<DocType>("process");
+  const [companies, setCompanies] = useState<Company[]>([]);
 
   // Process form
   const [pFile, setPFile] = useState<File | null>(null);
   const [pWorkflow, setPWorkflow] = useState("");
   const [pDept, setPDept] = useState("");
+  const [pCompany, setPCompany] = useState("all");
   const pFileRef = useRef<HTMLInputElement>(null);
   const [pDragging, setPDragging] = useState(false);
 
@@ -53,11 +60,13 @@ export default function UploadPage() {
   const [aDept, setADept] = useState("");
   const [aWorkflow, setAWorkflow] = useState("");
   const [aAppearsAs, setAAppearsAs] = useState<Set<string>>(new Set(["how_to_guide"]));
+  const [aCompany, setACompany] = useState("all");
   const aFileRef = useRef<HTMLInputElement>(null);
   const [aDragging, setADragging] = useState(false);
 
   // SED form
   const [sFile, setSFile] = useState<File | null>(null);
+  const [sCompany, setSCompany] = useState("all");
   const sFileRef = useRef<HTMLInputElement>(null);
   const [sDragging, setSDragging] = useState(false);
 
@@ -79,6 +88,12 @@ export default function UploadPage() {
         setAuthLoading(false);
       });
   }, [router]);
+
+  useEffect(() => {
+    fetch("/api/companies/user")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: Company[]) => setCompanies(data));
+  }, []);
 
   if (authLoading) return null;
 
@@ -107,6 +122,15 @@ export default function UploadPage() {
     });
   }
 
+  function appendCompanyFields(fd: FormData, companyId: string) {
+    if (companyId === "all") {
+      fd.append("is_corporate", "true");
+    } else {
+      fd.append("is_corporate", "false");
+      fd.append("company_id", companyId);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (loading) return;
@@ -125,6 +149,7 @@ export default function UploadPage() {
         fd.append("file", pFile);
         fd.append("workflow_name", pWorkflow.trim());
         fd.append("department", pDept.trim());
+        appendCompanyFields(fd, pCompany);
         const res = await fetch("/api/upload/process", { method: "POST", body: fd });
         if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
         const json = await res.json();
@@ -138,6 +163,7 @@ export default function UploadPage() {
         fd.append("department", aDept.trim());
         if (aWorkflow.trim()) fd.append("workflow_name", aWorkflow.trim());
         fd.append("appears_as", Array.from(aAppearsAs).join(","));
+        appendCompanyFields(fd, aCompany);
         const res = await fetch("/api/upload/article", { method: "POST", body: fd });
         if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
         const json = await res.json();
@@ -147,6 +173,7 @@ export default function UploadPage() {
       } else {
         if (!sFile) return;
         fd.append("file", sFile);
+        appendCompanyFields(fd, sCompany);
         const res = await fetch("/api/upload/sed", { method: "POST", body: fd });
         if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
         const json = await res.json();
@@ -176,6 +203,34 @@ export default function UploadPage() {
     transition: "background 0.15s, border-color 0.15s",
     marginBottom: 14,
   };
+
+  const companySelectStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "9px 14px",
+    fontSize: 13,
+    borderRadius: 8,
+    marginBottom: 14,
+    boxSizing: "border-box",
+  };
+
+  function CompanyDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 12, fontWeight: 500, color: "var(--muted)", marginBottom: 6 }}>Company</div>
+        <select
+          className="search-input"
+          required
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          style={companySelectStyle}
+        >
+          {companies.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden", fontFamily: "var(--font-geist-sans), system-ui, sans-serif" }}>
@@ -262,6 +317,7 @@ export default function UploadPage() {
                       style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
                     />
                   </div>
+                  <CompanyDropdown value={pCompany} onChange={setPCompany} />
                 </>
               )}
 
@@ -337,6 +393,7 @@ export default function UploadPage() {
                       })}
                     </div>
                   </div>
+                  <CompanyDropdown value={aCompany} onChange={setACompany} />
                 </>
               )}
 
@@ -367,6 +424,7 @@ export default function UploadPage() {
                     Project title · Story number · INC ticket · CAB ticket · Requestor · Programmer ·
                     Business requirements · IT design · Unit testing · Acceptance testing
                   </div>
+                  <CompanyDropdown value={sCompany} onChange={setSCompany} />
                 </>
               )}
 

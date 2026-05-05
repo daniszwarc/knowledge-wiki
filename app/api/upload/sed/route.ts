@@ -16,6 +16,8 @@ export async function POST(req: NextRequest) {
 
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
+  const isCorporate = formData.get("is_corporate") === "true";
+  const companyId = (formData.get("company_id") as string | null) || null;
 
   if (!file) {
     return NextResponse.json({ error: "file is required" }, { status: 400 });
@@ -33,16 +35,24 @@ export async function POST(req: NextRequest) {
   }
 
   const json = await pipelineRes.json();
+  const sedId: string | null = json.sed_id ?? null;
+
+  if (sedId) {
+    await query(
+      `UPDATE seds SET company_id = $1, is_corporate = $2 WHERE id = $3`,
+      [companyId, isCorporate, sedId]
+    );
+  }
 
   await query(
     `INSERT INTO audit_log (table_name, record_id, action, changed_by, new_value)
      VALUES ($1, $2, $3, $4, $5)`,
     [
       "seds",
-      json.sed_id ?? null,
+      sedId,
       "INSERT",
       session.email,
-      JSON.stringify({ ticket_number: json.ticket_number, project_title: json.project_title }),
+      JSON.stringify({ ticket_number: json.ticket_number, project_title: json.project_title, company_id: companyId, is_corporate: isCorporate }),
     ]
   );
 
