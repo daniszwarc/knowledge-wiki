@@ -14,10 +14,10 @@ export async function chat(
 ): Promise<ReadableStream<Uint8Array>> {
   const client = getClient();
   const isRemote = (process.env.LLM_API_KEY ?? "ollama") !== "ollama"
-
+  
   const stream = await client.chat.completions.create({
     model: model ?? process.env.OLLAMA_CHAT_MODEL ?? "qwen2.5:3b",
-    messages: [{ role: "system", content: systemPrompt }, ...messages],
+    messages: [{ role: "system", content: isRemote ? systemPrompt + "\n/no_think" : systemPrompt }, ...messages],
     stream: true,
     ...(isRemote && {
       thinking: {
