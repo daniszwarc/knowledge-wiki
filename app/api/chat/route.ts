@@ -292,7 +292,15 @@ ${sed.acceptance_testing ?? 'not documented'}
       let systemPrompt: string;
       if (context) {
         systemPrompt =
-          "Answer the question using ONLY the document below. Be brief and direct — 2-3 sentences maximum. Quote the relevant part of the document. Do not analyze, interpret, caveat, or add any information not explicitly stated. If the document does not answer the question, say: 'This is not covered in this document.' Read the full conversation to resolve follow-up questions.\n\nDOCUMENT:\n" + context;
+          "You are a helpful assistant answering questions about this document. " +
+          "Answer in plain conversational sentences — do not use quotation marks or " +
+          "copy text verbatim from the document. Explain in your own words, " +
+          "as if you are helping a colleague understand the process. " +
+          "Be concise — 1 to 3 sentences maximum. " +
+          "Stay strictly grounded in the document content — do not add information " +
+          "not present in the document. " +
+          "If the answer is not in the document, say so clearly.\n\n" +
+          "DOCUMENT:\n" + context;
       } else {
         systemPrompt =
           "You are a process discovery assistant. Using ONLY the documented content below, " +

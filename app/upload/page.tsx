@@ -18,7 +18,7 @@ interface Company {
 type DocType = "process" | "article" | "sed";
 
 type UploadResult =
-  | { type: "process"; workflowId: string | null; workflowName: string; rulesExtracted: number }
+  | { type: "process"; workflowId: string | null; workflowName: string; rulesExtracted: number; articleId: string | null }
   | { type: "article"; articleId: string | null; title: string }
   | { type: "sed"; sedId: string; ticketNumber: string; projectTitle: string };
 
@@ -48,8 +48,8 @@ export default function UploadPage() {
 
   // Process form
   const [pFile, setPFile] = useState<File | null>(null);
-  const [pWorkflow, setPWorkflow] = useState("");
-  const [pDept, setPDept] = useState("");
+  const [pWorkflow, setPWorkflow] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("lastWorkflow") ?? "" : ""));
+  const [pDept, setPDept] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("lastDepartment") ?? "" : ""));
   const [pCompany, setPCompany] = useState("all");
   const pFileRef = useRef<HTMLInputElement>(null);
   const [pDragging, setPDragging] = useState(false);
@@ -57,7 +57,7 @@ export default function UploadPage() {
   // Article form
   const [aFile, setAFile] = useState<File | null>(null);
   const [aTitle, setATitle] = useState("");
-  const [aDept, setADept] = useState("");
+  const [aDept, setADept] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("lastDepartment") ?? "" : ""));
   const [aWorkflow, setAWorkflow] = useState("");
   const [aAppearsAs, setAAppearsAs] = useState<Set<string>>(new Set(["how_to_guide"]));
   const [aCompany, setACompany] = useState("all");
@@ -154,7 +154,11 @@ export default function UploadPage() {
         if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
         const json = await res.json();
         stopProgress(true);
-        setResult({ type: "process", workflowId: json.workflow_id, workflowName: json.workflow_name, rulesExtracted: json.rules_extracted });
+        localStorage.setItem("lastDepartment", pDept.trim());
+        localStorage.setItem("lastWorkflow", pWorkflow.trim());
+        setResult({ type: "process", workflowId: json.workflow_id, workflowName: json.workflow_name, rulesExtracted: json.rules_extracted, articleId: json.article_id ?? null });
+        window.dispatchEvent(new Event("wiki:content-updated"));
+        router.refresh();
 
       } else if (selectedType === "article") {
         if (!aFile || !aTitle.trim() || !aDept.trim() || aAppearsAs.size === 0) return;
@@ -168,7 +172,10 @@ export default function UploadPage() {
         if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
         const json = await res.json();
         stopProgress(true);
+        localStorage.setItem("lastDepartment", aDept.trim());
         setResult({ type: "article", articleId: json.article_id, title: json.title });
+        window.dispatchEvent(new Event("wiki:content-updated"));
+        router.refresh();
 
       } else {
         if (!sFile) return;
@@ -179,6 +186,8 @@ export default function UploadPage() {
         const json = await res.json();
         stopProgress(true);
         setResult({ type: "sed", sedId: json.sed_id, ticketNumber: json.ticket_number, projectTitle: json.project_title });
+        window.dispatchEvent(new Event("wiki:content-updated"));
+        router.refresh();
       }
     } catch (err) {
       stopProgress(false);
@@ -463,32 +472,41 @@ export default function UploadPage() {
 
               {/* Result */}
               {result && (
-                <div style={{ marginTop: 16, fontSize: 13, color: "#15803d" }}>
-                  {result.type === "process" && (
-                    <>
+                <div style={{ marginTop: 16, fontSize: 13 }}>
+                  {result.type === "process" && result.rulesExtracted > 0 && (
+                    <span style={{ color: "#15803d" }}>
                       Extracted {result.rulesExtracted} rule{result.rulesExtracted !== 1 ? "s" : ""} from{" "}
                       {result.workflowId
                         ? <a href={`/workflow/${result.workflowId}`} style={{ color: "#15803d", fontWeight: 500 }}>{result.workflowName}</a>
                         : <strong>{result.workflowName}</strong>
                       }
-                    </>
+                    </span>
+                  )}
+                  {result.type === "process" && result.rulesExtracted === 0 && (
+                    <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e", borderRadius: 8, padding: "10px 14px", lineHeight: 1.6 }}>
+                      No business rules were found in this document. It has been saved as a How-to Guide instead and is available in the{" "}
+                      {result.articleId
+                        ? <a href={`/article/${result.articleId}`} style={{ color: "#92400e", fontWeight: 500 }}>Reference Articles</a>
+                        : "Reference Articles"
+                      }{" "}section.
+                    </div>
                   )}
                   {result.type === "article" && (
-                    <>
+                    <span style={{ color: "#15803d" }}>
                       Published{" "}
                       {result.articleId
                         ? <a href={`/article/${result.articleId}`} style={{ color: "#15803d", fontWeight: 500 }}>{result.title}</a>
                         : <strong>{result.title}</strong>
                       }
-                    </>
+                    </span>
                   )}
                   {result.type === "sed" && (
-                    <>
+                    <span style={{ color: "#15803d" }}>
                       Processed SED{" "}
                       <a href={`/sed/${result.sedId}`} style={{ color: "#15803d", fontWeight: 500 }}>
                         {result.ticketNumber} — {result.projectTitle}
                       </a>
-                    </>
+                    </span>
                   )}
                 </div>
               )}

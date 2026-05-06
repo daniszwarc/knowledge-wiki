@@ -269,6 +269,22 @@ export function Sidebar({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openSections.seds]);
 
+  useEffect(() => {
+    const handler = () => {
+      fetch("/api/nav")
+        .then((r) => r.json())
+        .then((data: SidebarNavData) => setNav(data));
+      if (openSections.seds) {
+        fetch("/api/seds")
+          .then((r) => r.json())
+          .then((data: NavSed[]) => setSeds(data))
+          .catch(() => {});
+      }
+    };
+    window.addEventListener("wiki:content-updated", handler);
+    return () => window.removeEventListener("wiki:content-updated", handler);
+  }, [openSections.seds]);
+
   function toggleSection(s: Section) {
     setOpenSections((p) => ({ ...p, [s]: !p[s] }));
   }
