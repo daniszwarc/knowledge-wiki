@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
       path: "/",
       maxAge: 8 * 60 * 60,
       sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
     });
     response.cookies.delete("wiki_temp");
 

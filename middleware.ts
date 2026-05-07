@@ -31,7 +31,7 @@ export async function middleware(req: NextRequest) {
   }
 
   // Validate session via internal API call to avoid importing DB in edge middleware
-  const baseUrl = req.nextUrl.origin;
+  const baseUrl = "http://wiki:3000";
   let session: { userId: string; email: string; role: string } | null = null;
 
   try {

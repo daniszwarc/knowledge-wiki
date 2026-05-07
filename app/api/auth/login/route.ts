@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
       path: "/",
       maxAge: 5 * 60, // 5 minutes
       sameSite: "lax",
+      secure: true,
     });
 
     return response;

@@ -45,11 +45,12 @@ export default function UploadPage() {
   const [authLoading, setAuthLoading] = useState(true);
   const [selectedType, setSelectedType] = useState<DocType>("process");
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [departments, setDepartments] = useState<string[]>([]);
 
   // Process form
   const [pFile, setPFile] = useState<File | null>(null);
-  const [pWorkflow, setPWorkflow] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("lastWorkflow") ?? "" : ""));
-  const [pDept, setPDept] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("lastDepartment") ?? "" : ""));
+  const [pWorkflow, setPWorkflow] = useState("");
+  const [pDept, setPDept] = useState("");
   const [pCompany, setPCompany] = useState("all");
   const pFileRef = useRef<HTMLInputElement>(null);
   const [pDragging, setPDragging] = useState(false);
@@ -57,7 +58,7 @@ export default function UploadPage() {
   // Article form
   const [aFile, setAFile] = useState<File | null>(null);
   const [aTitle, setATitle] = useState("");
-  const [aDept, setADept] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("lastDepartment") ?? "" : ""));
+  const [aDept, setADept] = useState("");
   const [aWorkflow, setAWorkflow] = useState("");
   const [aAppearsAs, setAAppearsAs] = useState<Set<string>>(new Set(["how_to_guide"]));
   const [aCompany, setACompany] = useState("all");
@@ -90,6 +91,10 @@ export default function UploadPage() {
   }, [router]);
 
   useEffect(() => {
+    fetch("/api/departments")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: string[]) => setDepartments(data));
+
     fetch("/api/companies/user")
       .then((r) => (r.ok ? r.json() : []))
       .then((data: Company[]) => setCompanies(data));
@@ -317,14 +322,10 @@ export default function UploadPage() {
                       placeholder="Workflow / topic name"
                       style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
                     />
-                    <input
-                      className="search-input"
-                      required
-                      value={pDept}
-                      onChange={(e) => setPDept(e.target.value)}
-                      placeholder="Department"
-                      style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                    />
+                    <select className="search-input" required value={pDept} onChange={(e) => setPDept(e.target.value)} style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}>
+                      <option value="">Department</option>
+                      {departments.map((d) => (<option key={d} value={d}>{d}</option>))}
+                    </select>
                   </div>
                   <CompanyDropdown value={pCompany} onChange={setPCompany} />
                 </>
@@ -355,14 +356,10 @@ export default function UploadPage() {
                       placeholder="Title"
                       style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
                     />
-                    <input
-                      className="search-input"
-                      required
-                      value={aDept}
-                      onChange={(e) => setADept(e.target.value)}
-                      placeholder="Department"
-                      style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
-                    />
+                    <select className="search-input" required value={aDept} onChange={(e) => setADept(e.target.value)} style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}>
+                      <option value="">Department</option>
+                      {departments.map((d) => (<option key={d} value={d}>{d}</option>))}
+                    </select>
                   </div>
                   <input
                     className="search-input"

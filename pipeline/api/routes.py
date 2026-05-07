@@ -28,7 +28,7 @@ router = APIRouter()
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:270m")
 WIKI_API_URL = os.getenv("WIKI_API_URL", "http://localhost:3000")
-UPLOADS_DIR = Path(__file__).resolve().parents[2] / "public" / "uploads"
+UPLOADS_DIR = Path(os.getenv("UPLOADS_DIR", "/app/public/uploads"))
 
 
 def _trigger_narrative(workflow_id: str) -> None:
