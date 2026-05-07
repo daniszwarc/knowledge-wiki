@@ -50,6 +50,7 @@ export default function SedsPage() {
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [emptyMessage, setEmptyMessage] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchStage, setSearchStage] = useState<string>("");
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -78,27 +79,52 @@ export default function SedsPage() {
     setResults(null);
     setEmptyMessage(null);
     setSearchError(null);
+    setSearchStage("Searching past SEDs...");
     try {
-      const res = await fetch("/api/seds/search", {
+      const res = await fetch("/api/seds/search-stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: queryText.trim() }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setSearchError(data.error ?? "Search failed.");
+      if (!res.ok || !res.body) {
+        setSearchError("Search failed.");
         return;
       }
-      if (data.results && data.results.length > 0) {
-        setResults(data.results);
-      } else {
-        setResults([]);
-        setEmptyMessage(data.message ?? "No similar issues found in past SEDs.");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const msg = JSON.parse(line);
+            if (msg.type === "status") {
+              setSearchStage(msg.message);
+            } else if (msg.type === "results") {
+              setResults(msg.results);
+            } else if (msg.type === "summary") {
+              setResults((prev) =>
+                prev ? prev.map((r) => r.id === msg.id ? { ...r, summary: msg.summary } : r) : prev
+              );
+            } else if (msg.type === "empty") {
+              setResults([]);
+              setEmptyMessage(msg.message);
+            } else if (msg.type === "error") {
+              setSearchError(msg.message);
+            }
+          } catch { /* ignore parse errors */ }
+        }
       }
     } catch {
       setSearchError("Could not reach the search service. Please try again.");
     } finally {
       setSearching(false);
+      setSearchStage("");
     }
   }
 
@@ -159,7 +185,7 @@ export default function SedsPage() {
                   opacity: canSearch ? 1 : 0.4,
                 }}
               >
-                {searching ? "Searching past SEDs…" : "Search past SEDs"}
+                {searching ? (searchStage || "Searching past SEDs...") : "Search past SEDs"}
               </button>
               {queryText.trim().length > 0 && queryText.trim().length < 20 && (
                 <span style={{ marginLeft: 12, fontSize: 12, color: "var(--muted-light)" }}>

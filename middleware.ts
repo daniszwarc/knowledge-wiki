@@ -7,6 +7,7 @@ const PUBLIC_PATHS = [
   "/api/auth/",
   "/api/embed",
   "/api/articles/embed",
+  "/api/seds/embed",
   "/api/search",
   "/api/nav",
   "/_next/",
@@ -21,6 +22,11 @@ export async function middleware(req: NextRequest) {
 
   // Allow public paths
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p))) {
+    return NextResponse.next();
+  }
+
+  // Allow internal embed endpoints
+  if (/^\/api\/seds\/[^/]+\/embed$/.test(pathname)) {
     return NextResponse.next();
   }
 
