@@ -152,6 +152,7 @@ export default function SedsPage() {
             <textarea
               value={queryText}
               onChange={(e) => setQueryText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (canSearch) handleSearch(e); } }}
               rows={3}
               placeholder="e.g. PHP is throwing an error when validating numeric fields in PO entry"
               style={{

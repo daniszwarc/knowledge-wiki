@@ -49,7 +49,7 @@ export async function POST(req: Request) {
       [vectorStr]
     );
 
-    const relevant = rows.filter((r) => r.similarity > 0.3);
+    const relevant = rows.filter((r) => r.similarity > 0.15);
     if (relevant.length === 0) {
       return Response.json({ results: [], message: "No similar issues found in past SEDs." });
     }
@@ -68,14 +68,14 @@ export async function POST(req: Request) {
             `Title: ${r.project_title}\n` +
             `Business requirements: ${r.business_requirements ?? ""}\n` +
             `IT Design: ${r.it_design ?? ""}\n`;
-          const llmRes = await fetch(`${process.env.OLLAMA_BASE_URL}/api/generate`, {
+          const llmRes = await fetch(`${process.env.OLLAMA_BASE_URL}/chat/completions`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model: chatModel, prompt, stream: false }),
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${process.env.LLM_API_KEY}` },
+            body: JSON.stringify({ model: chatModel, messages: [{ role: "user", content: prompt }], stream: false, chat_template_kwargs: { enable_thinking: false } }),
           });
           if (!llmRes.ok) return null;
           const llmData = await llmRes.json();
-          return (llmData.response as string | undefined)?.trim() ?? null;
+          return (llmData.choices?.[0]?.message?.content as string | undefined)?.trim() ?? null;
         } catch {
           return null;
         }

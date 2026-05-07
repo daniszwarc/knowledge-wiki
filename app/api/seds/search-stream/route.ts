@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
           [vectorStr]
         );
 
-        const relevant = rows.filter((r) => r.similarity > 0.3);
+        const relevant = rows.filter((r) => r.similarity > 0.15);
 
         if (relevant.length === 0) {
           send({ type: "empty", message: "No similar issues found in past SEDs." });
