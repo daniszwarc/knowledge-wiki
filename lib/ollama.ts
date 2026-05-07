@@ -25,7 +25,7 @@ export async function chat(
       }
     })
   }
-  const stream = await client.chat.completions.create(params);
+  const stream = await client.chat.completions.create(params) as unknown as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
 
   const encoder = new TextEncoder();
 
