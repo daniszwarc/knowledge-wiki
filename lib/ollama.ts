@@ -15,16 +15,17 @@ export async function chat(
   const client = getClient();
   const isRemote = (process.env.LLM_API_KEY ?? "ollama") !== "ollama"
   
-  const stream = await client.chat.completions.create({
+  const params: any = {
     model: model ?? process.env.OLLAMA_CHAT_MODEL ?? "qwen3.6",
     messages: [{ role: "system", content: systemPrompt }, ...messages],
-    stream: true,
+    stream: true as const,
     ...(isRemote && {
       chat_template_kwargs: {
         enable_thinking: false
       }
     })
-  } as any);
+  }
+  const stream = await client.chat.completions.create(params);
 
   const encoder = new TextEncoder();
 
