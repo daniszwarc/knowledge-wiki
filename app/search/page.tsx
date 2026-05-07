@@ -143,11 +143,13 @@ function SearchResults() {
         {/* Results */}
         {!loading && searched && results.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {results.map((r, idx) =>
-              r.type === "article" ? (
+            {results.map((r, idx) => {
+              const result = r as any;
+              return (
+              result.type === "article" ? (
                 <a
-                  key={r.article_id}
-                  href={`/article/${r.article_id}`}
+                  key={result.article_id}
+                  href={`/article/${result.article_id}`}
                   className="workflow-card"
                   style={{ display: "block", padding: 18, borderRadius: 10, textDecoration: "none", color: "inherit" }}
                 >
@@ -158,35 +160,33 @@ function SearchResults() {
                     <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8" }}>
                       Article
                     </span>
-                    {r.department && (
+                    {result.department && (
                       <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, border: "1px solid var(--card-border)", color: "var(--muted-light)", background: "none" }}>
-                        {r.department}
+                        {result.department}
                       </span>
                     )}
-                    {r.is_corporate && (
+                    {result.is_corporate && (
                       <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, background: "#E6F1FB", color: "#185FA5", border: "1px solid #C0D7F3" }}>Corporate</span>
                     )}
-                    {!r.is_corporate && r.company_name && (
+                    {!result.is_corporate && result.company_name && (
                       <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, border: "1px solid var(--card-border)", color: "var(--muted-light)", background: "none" }}>
-                        {r.company_number != null ? `${r.company_number} - ${r.company_name}` : r.company_name}
+                        {result.company_number != null ? `${result.company_number} - ${result.company_name}` : result.company_name}
                       </span>
                     )}
                   </div>
                   <p style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)", marginBottom: 6, lineHeight: 1.45 }}>
-                    {r.title}
+                    {result.title}
                   </p>
-                  {r.snippet && (
+                  {result.snippet && (
                     <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 0, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                      {r.snippet.replace(/[#*`]/g, "")}
+                      {result.snippet.replace(/[#*`]/g, "")}
                     </p>
                   )}
                   <div style={{ marginTop: 8, fontSize: 10, color: "var(--muted-light)", opacity: 0.5, fontFamily: "var(--font-geist-mono)" }}>
-                    score {r.rrf_score.toFixed(4)}
+                    score {result.rrf_score.toFixed(4)}
                   </div>
                 </a>
-              ) : (() => {
-                const result = r as any;
-                return (
+              ) : (
                   <a
                     key={result.rule_id ?? result.id}
                     href={result.rule_id ? `/workflow/${result.workflow_id}#${result.rule_id}` : `/sed/${result.id}`}
@@ -228,9 +228,9 @@ function SearchResults() {
                       </span>
                     </div>
                   </a>
-                );
-              })())
-            )}
+              )
+              );
+            })}
           </div>
         )}
 
