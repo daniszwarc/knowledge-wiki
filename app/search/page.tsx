@@ -184,49 +184,52 @@ function SearchResults() {
                     score {r.rrf_score.toFixed(4)}
                   </div>
                 </a>
-              ) : (
-                <a
-                  key={(r as any).rule_id ?? r.id}
-                  href={(r as any).rule_id ? `/workflow/${r.workflow_id}#${(r as any).rule_id}` : `/sed/${r.id}`}
-                  className="workflow-card"
-                  style={{ display: "block", padding: 18, borderRadius: 10, textDecoration: "none", color: "inherit" }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: "var(--muted-light)", minWidth: 18, textAlign: "center" }}>
-                      {idx + 1}
-                    </span>
-                    <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, border: "1px solid var(--card-border)", background: "var(--sidebar-bg)", color: "var(--muted)" }}>
-                      {r.workflow_name}
-                    </span>
-                    <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, border: "1px solid var(--card-border)", color: "var(--muted-light)", background: "none", textTransform: "capitalize" }}>
-                      {r.rule_type}
-                    </span>
-                    {!r.stakeholder_validated && (
-                      <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, background: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>
-                        Unvalidated
+              ) : (() => {
+                const result = r as any;
+                return (
+                  <a
+                    key={result.rule_id ?? result.id}
+                    href={result.rule_id ? `/workflow/${result.workflow_id}#${result.rule_id}` : `/sed/${result.id}`}
+                    className="workflow-card"
+                    style={{ display: "block", padding: 18, borderRadius: 10, textDecoration: "none", color: "inherit" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "var(--muted-light)", minWidth: 18, textAlign: "center" }}>
+                        {idx + 1}
                       </span>
-                    )}
-                  </div>
-                  <p style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)", marginBottom: r.detail ? 5 : 8, lineHeight: 1.45 }}>
-                    {r.summary}
-                  </p>
-                  {r.detail && (
-                    <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 8, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                      {r.detail}
+                      <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, border: "1px solid var(--card-border)", background: "var(--sidebar-bg)", color: "var(--muted)" }}>
+                        {result.workflow_name}
+                      </span>
+                      <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, border: "1px solid var(--card-border)", color: "var(--muted-light)", background: "none", textTransform: "capitalize" }}>
+                        {result.rule_type}
+                      </span>
+                      {!result.stakeholder_validated && (
+                        <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99, background: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>
+                          Unvalidated
+                        </span>
+                      )}
+                    </div>
+                    <p style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)", marginBottom: result.detail ? 5 : 8, lineHeight: 1.45 }}>
+                      {result.summary}
                     </p>
-                  )}
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "var(--muted-light)" }}>
-                    {r.owner_name && (
-                      <span>Owner: <span style={{ color: "var(--muted)", fontWeight: 500 }}>{r.owner_name}</span></span>
+                    {result.detail && (
+                      <p style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 8, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                        {result.detail}
+                      </p>
                     )}
-                    <span style={{ opacity: 0.4 }}>·</span>
-                    <span>{r.department}</span>
-                    <span style={{ marginLeft: "auto", opacity: 0.5, fontFamily: "var(--font-geist-mono)", fontSize: 10 }}>
-                      score {r.rrf_score.toFixed(4)}
-                    </span>
-                  </div>
-                </a>
-              )
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "var(--muted-light)" }}>
+                      {result.owner_name && (
+                        <span>Owner: <span style={{ color: "var(--muted)", fontWeight: 500 }}>{result.owner_name}</span></span>
+                      )}
+                      <span style={{ opacity: 0.4 }}>·</span>
+                      <span>{result.department}</span>
+                      <span style={{ marginLeft: "auto", opacity: 0.5, fontFamily: "var(--font-geist-mono)", fontSize: 10 }}>
+                        score {result.rrf_score.toFixed(4)}
+                      </span>
+                    </div>
+                  </a>
+                );
+              })())
             )}
           </div>
         )}
