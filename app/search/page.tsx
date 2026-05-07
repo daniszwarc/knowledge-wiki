@@ -186,8 +186,8 @@ function SearchResults() {
                 </a>
               ) : (
                 <a
-                  key={r.rule_id ?? r.id}
-                  href={r.rule_id ? `/workflow/${r.workflow_id}#${r.rule_id}` : `/sed/${r.id}`}
+                  key={(r as any).rule_id ?? r.id}
+                  href={(r as any).rule_id ? `/workflow/${r.workflow_id}#${(r as any).rule_id}` : `/sed/${r.id}`}
                   className="workflow-card"
                   style={{ display: "block", padding: 18, borderRadius: 10, textDecoration: "none", color: "inherit" }}
                 >
