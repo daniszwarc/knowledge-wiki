@@ -43,7 +43,7 @@ services:
       - "3000:3000"
     labels:
       - traefik.enable=true
-      - traefik.http.routers.wiki.rule=Host(`${WIKI_DOMAIN}`)
+      - traefik.http.routers.wiki.rule=Host(`wiki.daniszwarc.cloud`)
       - traefik.http.routers.wiki.entrypoints=websecure
       - traefik.http.routers.wiki.tls=true
       - traefik.http.routers.wiki.tls.certresolver=mytlschallenge
