@@ -8,7 +8,8 @@ export async function POST(req: NextRequest) {
     await deleteSession(token).catch(() => {});
   }
 
-  const response = NextResponse.redirect(new URL("/login", req.url));
+  const base = process.env.NEXTAUTH_URL ?? req.url;
+  const response = NextResponse.redirect(new URL("/login", base));
   response.cookies.delete("wiki_session");
   response.cookies.delete("wiki_temp");
   return response;
