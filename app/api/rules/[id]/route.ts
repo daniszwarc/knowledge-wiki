@@ -13,6 +13,10 @@ export async function DELETE(
     const session = await validateSession(token);
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+    if (!["editor", "admin", "developer"].includes(session.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const { id: ruleId } = await params;
 
     if (!ruleId) {

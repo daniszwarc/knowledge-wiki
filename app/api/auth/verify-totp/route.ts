@@ -7,6 +7,8 @@ import {
   getUserById,
 } from "@/lib/auth";
 
+const totpAttempts = new Map<string, { count: number; resetAt: number }>();
+
 export async function POST(req: NextRequest) {
   try {
     const { token } = await req.json();
@@ -15,6 +17,16 @@ export async function POST(req: NextRequest) {
     if (!tempToken) {
       return NextResponse.json({ error: "Session expired" }, { status: 401 });
     }
+
+    const now = Date.now();
+    const window = totpAttempts.get(tempToken) ?? { count: 0, resetAt: now + 300_000 };
+    if (now > window.resetAt) { window.count = 0; window.resetAt = now + 300_000; }
+    if (++window.count > 5) {
+      totpAttempts.set(tempToken, window);
+      await deleteTempToken(tempToken);
+      return NextResponse.json({ error: "Too many attempts. Please log in again." }, { status: 429 });
+    }
+    totpAttempts.set(tempToken, window);
 
     const temp = await validateTempToken(tempToken);
     if (!temp) {
