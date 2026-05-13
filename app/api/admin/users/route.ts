@@ -41,9 +41,9 @@ export async function GET(req: NextRequest) {
 
   const users = await query<{
     id: string; email: string; role: string;
-    totp_enabled: boolean; last_login: string | null; created_at: string;
+    totp_enabled: boolean; two_fa_method: string; last_login: string | null; created_at: string;
   }>(
-    `SELECT id, email, role, totp_enabled, last_login, created_at
+    `SELECT id, email, role, totp_enabled, two_fa_method, last_login, created_at
      FROM users ORDER BY created_at`
   );
   return NextResponse.json(users);

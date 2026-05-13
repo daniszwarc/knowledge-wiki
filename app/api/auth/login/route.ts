@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserByEmail, verifyPassword, createTempToken, generateEmailCode } from "@/lib/auth";
-import { sendVerificationCode } from "@/lib/email";
+import { getUserByEmail, verifyPassword, createTempToken } from "@/lib/auth";
 import { query } from "@/lib/db";
 
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -43,8 +42,6 @@ export async function POST(req: NextRequest) {
 
     let responseBody: Record<string, boolean>;
     if (method === "email") {
-      const code = await generateEmailCode(user.id);
-      await sendVerificationCode(user.email, code);
       responseBody = { requiresEmailCode: true };
     } else if (hasTOTP) {
       responseBody = { requiresTOTP: true };
