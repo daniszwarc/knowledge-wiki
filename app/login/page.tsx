@@ -31,6 +31,8 @@ export default function LoginPage() {
 
       if (data.requiresTOTP) {
         router.push("/login/verify");
+      } else if (data.requiresEmailCode) {
+        router.push("/login/verify-email");
       } else if (data.requiresSetup) {
         router.push("/login/setup-2fa");
       }

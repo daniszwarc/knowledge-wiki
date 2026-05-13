@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserByEmail, verifyPassword, createTempToken } from "@/lib/auth";
+import { getUserByEmail, verifyPassword, createTempToken, generateEmailCode } from "@/lib/auth";
+import { sendVerificationCode } from "@/lib/email";
 import { query } from "@/lib/db";
 
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -38,12 +39,20 @@ export async function POST(req: NextRequest) {
     const tempToken = await createTempToken(user.id);
 
     const hasTOTP = user.totp_enabled === true && user.totp_secret !== null;
+    const method = user.two_fa_method ?? "totp";
 
-    const response = NextResponse.json(
-      hasTOTP
-        ? { requiresTOTP: true }
-        : { requiresSetup: true }
-    );
+    let responseBody: Record<string, boolean>;
+    if (method === "email") {
+      const code = await generateEmailCode(user.id);
+      await sendVerificationCode(user.email, code);
+      responseBody = { requiresEmailCode: true };
+    } else if (hasTOTP) {
+      responseBody = { requiresTOTP: true };
+    } else {
+      responseBody = { requiresSetup: true };
+    }
+
+    const response = NextResponse.json(responseBody);
 
     response.cookies.set("wiki_temp", tempToken, {
       httpOnly: true,

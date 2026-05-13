@@ -10,6 +10,7 @@ export interface User {
   role: "viewer" | "validator" | "editor" | "admin";
   totp_secret: string | null;
   totp_enabled: boolean;
+  two_fa_method: "totp" | "email";
   created_at: string;
   last_login: string | null;
   created_by: string | null;
@@ -144,7 +145,7 @@ export async function updateTempTokenSecret(token: string, secret: string): Prom
 
 export async function getUserById(id: string): Promise<User | null> {
   const rows = await query<User>(
-    `SELECT id, email, role, totp_secret, totp_enabled, created_at, last_login, created_by
+    `SELECT id, email, role, totp_secret, totp_enabled, two_fa_method, created_at, last_login, created_by
      FROM users WHERE id = $1`,
     [id]
   );
@@ -153,9 +154,55 @@ export async function getUserById(id: string): Promise<User | null> {
 
 export async function getUserByEmail(email: string): Promise<(User & { password_hash: string }) | null> {
   const rows = await query<User & { password_hash: string }>(
-    `SELECT id, email, password_hash, role, totp_secret, totp_enabled, created_at, last_login, created_by
+    `SELECT id, email, password_hash, role, totp_secret, totp_enabled, two_fa_method, created_at, last_login, created_by
      FROM users WHERE email = $1`,
     [email]
   );
   return rows[0] ?? null;
+}
+
+// ── Email 2FA ─────────────────────────────────────────────────────────────────
+
+export async function generateEmailCode(userId: string): Promise<string> {
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  await query(
+    `INSERT INTO email_verification_codes (user_id, code, expires_at)
+     VALUES ($1, $2, $3)`,
+    [userId, code, expiresAt.toISOString()]
+  );
+  return code;
+}
+
+export async function verifyEmailCode(userId: string, code: string): Promise<boolean> {
+  const rows = await query<{ id: string }>(
+    `SELECT id FROM email_verification_codes
+     WHERE user_id = $1 AND used = false AND expires_at > now()
+     ORDER BY created_at DESC LIMIT 1`,
+    [userId]
+  );
+  if (rows.length === 0) return false;
+  const row = rows[0];
+
+  const match = await query<{ code: string }>(
+    `SELECT code FROM email_verification_codes WHERE id = $1`,
+    [row.id]
+  );
+  if (match.length === 0 || match[0].code !== code) return false;
+
+  await query(`UPDATE email_verification_codes SET used = true WHERE id = $1`, [row.id]);
+  return true;
+}
+
+export async function setTwoFaMethod(userId: string, method: "totp" | "email"): Promise<void> {
+  await query(`UPDATE users SET two_fa_method = $1 WHERE id = $2`, [method, userId]);
+}
+
+export async function getTwoFaMethod(userId: string): Promise<"totp" | "email"> {
+  const rows = await query<{ two_fa_method: string }>(
+    `SELECT two_fa_method FROM users WHERE id = $1`,
+    [userId]
+  );
+  const m = rows[0]?.two_fa_method;
+  return m === "email" ? "email" : "totp";
 }
