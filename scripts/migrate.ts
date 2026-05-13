@@ -95,12 +95,15 @@ async function migrate() {
     await client.query(`DROP TRIGGER IF EXISTS audit_articles_trigger ON articles`);
     await client.query(`DROP FUNCTION IF EXISTS audit_trigger_fn CASCADE`);
 
-    // Index for vector similarity search
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS rules_embedding_idx
-      ON rules USING ivfflat (embedding vector_cosine_ops)
-      WITH (lists = 100)
-    `);
+    // Index for vector similarity search (skipped for >2000 dims)
+    await client.query(`SAVEPOINT before_rules_idx`);
+    try {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS rules_embedding_idx
+        ON rules USING ivfflat (embedding vector_cosine_ops)
+        WITH (lists = 100)
+      `);
+    } catch { await client.query(`ROLLBACK TO SAVEPOINT before_rules_idx`); }
 
     // Index for full-text search
     await client.query(`
@@ -164,11 +167,14 @@ async function migrate() {
       )
     `);
 
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS articles_embedding_idx
-      ON articles USING ivfflat (embedding vector_cosine_ops)
-      WITH (lists = 100)
-    `);
+    await client.query(`SAVEPOINT before_articles_idx`);
+    try {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS articles_embedding_idx
+        ON articles USING ivfflat (embedding vector_cosine_ops)
+        WITH (lists = 100)
+      `);
+    } catch { await client.query(`ROLLBACK TO SAVEPOINT before_articles_idx`); }
 
     // Process narrative columns on workflows
     await client.query(`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS process_narrative text`);
@@ -232,11 +238,14 @@ async function migrate() {
         updated_at           TIMESTAMPTZ DEFAULT NOW()
       )
     `);
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS seds_embedding_idx
-      ON seds USING ivfflat (embedding vector_cosine_ops)
-      WITH (lists = 100)
-    `);
+    await client.query(`SAVEPOINT before_seds_idx`);
+    try {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS seds_embedding_idx
+        ON seds USING ivfflat (embedding vector_cosine_ops)
+        WITH (lists = 100)
+      `);
+    } catch { await client.query(`ROLLBACK TO SAVEPOINT before_seds_idx`); }
 
     // Add structured metadata columns to seds
     await client.query(`ALTER TABLE seds ADD COLUMN IF NOT EXISTS inc_ticket VARCHAR(100)`);
