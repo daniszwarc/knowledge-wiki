@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { validateSession } from "@/lib/auth";
 
 function requireAdmin(req: NextRequest) {
   const role = req.headers.get("x-user-role");
@@ -12,6 +13,14 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const token = req.cookies.get("wiki_session")?.value;
+  if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await validateSession(token);
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!["admin", "developer"].includes(session.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const err = requireAdmin(req);
   if (err) return err;
 
@@ -47,12 +56,19 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const token = req.cookies.get("wiki_session")?.value;
+  if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await validateSession(token);
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!["admin", "developer"].includes(session.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const err = requireAdmin(req);
   if (err) return err;
 
   const { id } = await params;
-  const selfId = req.headers.get("x-user-id");
-  if (id === selfId) {
+  if (id === session.userId) {
     return NextResponse.json({ error: "Cannot delete yourself" }, { status: 400 });
   }
 

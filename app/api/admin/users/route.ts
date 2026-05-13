@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, getUserCompanyIds } from "@/lib/db";
-import { hashPassword } from "@/lib/auth";
+import { hashPassword, validateSession } from "@/lib/auth";
 
 const ADMIN_ROLES = ["admin", "super_admin", "developer"];
 
@@ -13,13 +13,16 @@ function getCallerInfo(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const { role, userId } = getCallerInfo(req);
-  if (!["admin", "super_admin", "company_admin", "developer"].includes(role)) {
+  const token = req.cookies.get("wiki_session")?.value;
+  if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await validateSession(token);
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!["admin", "developer"].includes(session.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (role === "company_admin") {
-    const myCompanyIds = await getUserCompanyIds(userId);
+  if (session.role === "company_admin") {
+    const myCompanyIds = await getUserCompanyIds(session.userId);
     if (myCompanyIds.length === 0) return NextResponse.json([]);
 
     const users = await query<{
@@ -47,8 +50,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { role: callerRole, userId: callerId, email: callerEmail } = getCallerInfo(req);
-  if (!["admin", "super_admin", "company_admin", "developer"].includes(callerRole)) {
+  const token = req.cookies.get("wiki_session")?.value;
+  if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await validateSession(token);
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!["admin", "developer"].includes(session.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -58,21 +64,21 @@ export async function POST(req: NextRequest) {
   }
 
   // company_admin cannot create admin/super_admin users
-  if (callerRole === "company_admin" && ADMIN_ROLES.includes(role)) {
+  if (session.role === "company_admin" && ADMIN_ROLES.includes(role)) {
     return NextResponse.json({ error: "Forbidden: cannot assign that role" }, { status: 403 });
   }
 
   // company_admin can only assign companies they belong to
   let allowedCompanies: string[] | null = null;
-  if (callerRole === "company_admin") {
-    allowedCompanies = await getUserCompanyIds(callerId);
+  if (session.role === "company_admin") {
+    allowedCompanies = await getUserCompanyIds(session.userId);
   }
 
   const hash = await hashPassword(password);
   const rows = await query<{ id: string }>(
     `INSERT INTO users (email, password_hash, role, totp_enabled, created_by)
      VALUES ($1, $2, $3, false, $4) RETURNING id`,
-    [email.toLowerCase().trim(), hash, role, callerEmail]
+    [email.toLowerCase().trim(), hash, role, session.email]
   );
 
   const userId = rows[0].id;
