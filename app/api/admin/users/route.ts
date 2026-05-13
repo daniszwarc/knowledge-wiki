@@ -27,9 +27,9 @@ export async function GET(req: NextRequest) {
 
     const users = await query<{
       id: string; email: string; role: string;
-      totp_enabled: boolean; last_login: string | null; created_at: string;
+      totp_enabled: boolean; two_fa_method: string; last_login: string | null; created_at: string;
     }>(
-      `SELECT DISTINCT u.id, u.email, u.role, u.totp_enabled, u.last_login, u.created_at
+      `SELECT DISTINCT u.id, u.email, u.role, u.totp_enabled, u.two_fa_method, u.last_login, u.created_at
        FROM users u
        JOIN user_companies uc ON uc.user_id = u.id
        WHERE uc.company_id = ANY($1::uuid[])

@@ -7,6 +7,7 @@ interface User {
   email: string;
   role: string;
   totp_enabled: boolean;
+  two_fa_method: string;
   last_login: string | null;
   created_at: string;
 }
@@ -389,11 +390,11 @@ export default function AdminUsersPage() {
 
                   <span style={{
                     fontSize: 11, padding: "2px 8px", borderRadius: 99, display: "inline-block",
-                    background: user.totp_enabled ? "#dcfce7" : "#fef3c7",
-                    color: user.totp_enabled ? "#15803d" : "#92400e",
-                    border: `1px solid ${user.totp_enabled ? "#bbf7d0" : "#fde68a"}`,
+                    background: (user.totp_enabled || user.two_fa_method === 'email') ? "#dcfce7" : "#fef3c7",
+                    color: (user.totp_enabled || user.two_fa_method === 'email') ? "#15803d" : "#92400e",
+                    border: `1px solid ${(user.totp_enabled || user.two_fa_method === 'email') ? "#bbf7d0" : "#fde68a"}`,
                   }}>
-                    {user.totp_enabled ? "On" : "Off"}
+                    {user.totp_enabled ? "TOTP" : user.two_fa_method === 'email' ? "Email" : "Off"}
                   </span>
 
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>{fmt(user.last_login)}</span>
@@ -411,7 +412,7 @@ export default function AdminUsersPage() {
                     >
                       Companies
                     </button>
-                    {user.totp_enabled && (
+                    {(user.totp_enabled || user.two_fa_method === 'email') && (
                       <button
                         onClick={() => handleReset2FA(user.id)}
                         style={{ fontSize: 11, padding: "2px 8px", borderRadius: 5, border: "1px solid var(--card-border)", background: "none", color: "var(--muted)", cursor: "pointer" }}
