@@ -30,10 +30,10 @@ interface SearchResult {
   link: string;
 }
 
-function similarityLabel(score: number): { label: string; color: string } {
-  if (score > 0.7) return { label: "Strong match", color: "#4ade80" };
-  if (score >= 0.5) return { label: "Possible match", color: "#f59e0b" };
-  return { label: "Weak match", color: "var(--muted-light)" };
+function similarityLabel(score: number): { label: string; color: string; bg: string; border: string } {
+  if (score > 0.7) return { label: "Strong match", color: "#15803d", bg: "#dcfce7", border: "#bbf7d0" };
+  if (score >= 0.5) return { label: "Possible match", color: "#15803d", bg: "#dcfce7", border: "#bbf7d0" };
+  return { label: "Weak match", color: "var(--muted-light)", bg: "transparent", border: "var(--muted-light)" };
 }
 
 function formatDate(d: string | null): string {
@@ -235,7 +235,7 @@ export default function SedsPage() {
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 {results.map((r) => {
-                  const { label, color } = similarityLabel(r.similarity);
+                  const { label, color, bg, border } = similarityLabel(r.similarity);
                   const [line1, line2] = r.summary
                     ? r.summary.split(/(?<=\.)\s+/)
                     : [null, null];
