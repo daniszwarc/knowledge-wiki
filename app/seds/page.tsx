@@ -211,8 +211,8 @@ export default function SedsPage() {
 
           {/* Synthesis overview */}
           {synthesis.length > 0 && (
-            <div style={{ marginBottom: 32, padding: "16px 20px", borderRadius: 10, border: "0.5px solid var(--card-border)", background: "var(--sidebar-bg)" }}>
-              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 8 }}>
+            <div style={{ marginBottom: 32, padding: "16px 20px", borderRadius: 10, border: "1px solid #bbf7d0", background: "#f0fdf4" }}>
+              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#15803d", marginBottom: 8 }}>
                 Overview
               </p>
               <p style={{ fontSize: 14, color: "var(--foreground)", lineHeight: 1.7, margin: 0 }}>
