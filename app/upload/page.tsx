@@ -322,10 +322,18 @@ export default function UploadPage() {
                       placeholder="Workflow / topic name"
                       style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
                     />
-                    <select className="search-input" required value={pDept} onChange={(e) => setPDept(e.target.value)} style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}>
-                      <option value="">Department</option>
-                      {departments.map((d) => (<option key={d} value={d}>{d}</option>))}
-                    </select>
+                    <input
+                      className="search-input"
+                      list="dept-options"
+                      required
+                      value={pDept}
+                      onChange={(e) => setPDept(e.target.value)}
+                      placeholder="Department"
+                      style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                    />
+                    <datalist id="dept-options">
+                      {departments.map((d) => (<option key={d} value={d} />))}
+                    </datalist>
                   </div>
                   <CompanyDropdown value={pCompany} onChange={setPCompany} />
                 </>
@@ -356,10 +364,15 @@ export default function UploadPage() {
                       placeholder="Title"
                       style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
                     />
-                    <select className="search-input" required value={aDept} onChange={(e) => setADept(e.target.value)} style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}>
-                      <option value="">Department</option>
-                      {departments.map((d) => (<option key={d} value={d}>{d}</option>))}
-                    </select>
+                    <input
+                      className="search-input"
+                      list="dept-options"
+                      required
+                      value={aDept}
+                      onChange={(e) => setADept(e.target.value)}
+                      placeholder="Department"
+                      style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                    />
                   </div>
                   <input
                     className="search-input"

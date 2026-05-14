@@ -371,7 +371,7 @@ export default function AuditPage() {
                         </span>
                       </span>
                       <span style={{ fontSize: 11, color: "var(--muted-light)", fontFamily: "monospace" }}>
-                        {truncate(entry.record_id, 8)}
+                        {entry.record_id ? truncate(entry.record_id, 8) : "—"}
                       </span>
                       <span style={{
                         fontSize: 11, color: "var(--muted-light)", textAlign: "center",
