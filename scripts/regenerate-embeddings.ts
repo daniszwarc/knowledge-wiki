@@ -64,3 +64,59 @@ async function regenerateArticles() {
 }
 
 regenerateArticles();
+
+async function embedText(text: string): Promise<number[]> {
+  const baseUrl = (process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434').replace(/\/v1$/, '');
+  const model = process.env.OLLAMA_EMBED_MODEL ?? 'nomic-embed-text';
+  const apiKey = process.env.LLM_API_KEY ?? 'ollama';
+  const isRemote = apiKey !== 'ollama' && !baseUrl.includes('localhost');
+
+  if (isRemote) {
+    const res = await fetch(`${baseUrl}/v1/embeddings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, input: [text], encoding_format: 'float' }),
+    });
+    if (!res.ok) throw new Error(`Embed failed: ${res.status} ${await res.text()}`);
+    const data = await res.json();
+    return data.data[0].embedding;
+  } else {
+    const res = await fetch(`${baseUrl}/api/embed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, input: text }),
+    });
+    if (!res.ok) throw new Error(`Embed failed: ${res.status} ${await res.text()}`);
+    const data = await res.json();
+    const vector = data.embeddings?.[0] ?? data.embedding;
+    if (!vector || vector.length === 0) throw new Error('Empty embedding returned');
+    return vector;
+  }
+}
+
+async function regenerateSeds() {
+  const { rows } = await pool.query(
+    'SELECT id, ticket_number, project_title, business_requirements, it_design FROM seds WHERE embedding IS NULL'
+  );
+
+  console.log(`Found ${rows.length} SEDs to embed`);
+
+  for (let i = 0; i < rows.length; i++) {
+    const sed = rows[i];
+    const text = [sed.ticket_number, sed.project_title, sed.business_requirements, sed.it_design]
+      .filter(Boolean)
+      .join(' ')
+      .substring(0, 2000);
+
+    try {
+      const vector = await embedText(text);
+      const literal = `[${vector.join(',')}]`;
+      await pool.query('UPDATE seds SET embedding = $1::vector WHERE id = $2', [literal, sed.id]);
+      console.log(`[${i + 1}/${rows.length}] OK — ${sed.project_title}`);
+    } catch (e) {
+      console.log(`[${i + 1}/${rows.length}] ERROR — ${sed.project_title}:`, e);
+    }
+  }
+}
+
+regenerateSeds();

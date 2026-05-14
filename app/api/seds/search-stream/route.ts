@@ -79,6 +79,7 @@ export async function POST(req: NextRequest) {
         send({ type: "status", message: "Generating summaries..." });
 
         const chatModel = process.env.OLLAMA_CHAT_MODEL ?? "qwen3.6";
+        const summaryMap = new Map<string, string>();
 
         for (const r of relevant) {
           try {
@@ -109,6 +110,7 @@ export async function POST(req: NextRequest) {
             if (llmRes.ok) {
               const llmData = await llmRes.json();
               const summary = (llmData.choices?.[0]?.message?.content as string | undefined)?.trim() ?? null;
+              if (summary) summaryMap.set(r.id, summary);
               send({ type: "summary", id: r.id, summary });
             } else {
               send({ type: "summary", id: r.id, summary: null });
@@ -117,6 +119,61 @@ export async function POST(req: NextRequest) {
             send({ type: "summary", id: r.id, summary: null });
           }
         }
+
+        try {
+          send({ type: "status", message: "Summarising findings..." });
+
+          const sedsContext = relevant
+            .filter((r) => summaryMap.has(r.id))
+            .map((r) => `- "${r.project_title}" (/sed/${r.id}): ${summaryMap.get(r.id)}`)
+            .join("\n");
+
+          const synthesisPrompt =
+            `A user searched for: "${userQuery}"\n\n` +
+            `Here are the relevant SEDs found:\n${sedsContext}\n\n` +
+            `Write 2-3 sentences in a conversational tone identifying patterns across these findings. ` +
+            `Reference specific SEDs by title in plain text (no markdown). ` +
+            `Do not write a preamble like "Here is a summary". Be direct and helpful.`;
+
+          const synthRes = await fetch(`${process.env.OLLAMA_BASE_URL}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${process.env.LLM_API_KEY}`,
+            },
+            body: JSON.stringify({
+              model: chatModel,
+              messages: [{ role: "user", content: synthesisPrompt }],
+              stream: true,
+              chat_template_kwargs: { enable_thinking: false },
+            }),
+          });
+
+          if (synthRes.ok && synthRes.body) {
+            const synthReader = synthRes.body.getReader();
+            const synthDecoder = new TextDecoder();
+            let synthBuffer = "";
+            let synthDone = false;
+
+            while (!synthDone) {
+              const { done, value } = await synthReader.read();
+              if (done) break;
+              synthBuffer += synthDecoder.decode(value, { stream: true });
+              const lines = synthBuffer.split("\n");
+              synthBuffer = lines.pop() ?? "";
+              for (const line of lines) {
+                if (!line.startsWith("data: ")) continue;
+                const dataStr = line.slice(6).trim();
+                if (dataStr === "[DONE]") { synthDone = true; break; }
+                try {
+                  const chunk = JSON.parse(dataStr);
+                  const text = chunk.choices?.[0]?.delta?.content as string | undefined;
+                  if (text) send({ type: "synthesis_chunk", text });
+                } catch { /* ignore malformed chunks */ }
+              }
+            }
+          }
+        } catch { /* synthesis failure must not break the response */ }
 
         send({ type: "done" });
       } catch {

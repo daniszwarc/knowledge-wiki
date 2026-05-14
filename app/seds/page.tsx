@@ -51,6 +51,7 @@ export default function SedsPage() {
   const [emptyMessage, setEmptyMessage] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchStage, setSearchStage] = useState<string>("");
+  const [synthesis, setSynthesis] = useState<string>("");
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -80,6 +81,7 @@ export default function SedsPage() {
     setEmptyMessage(null);
     setSearchError(null);
     setSearchStage("Searching past SEDs...");
+    setSynthesis("");
     try {
       const res = await fetch("/api/seds/search-stream", {
         method: "POST",
@@ -111,6 +113,8 @@ export default function SedsPage() {
               setResults((prev) =>
                 prev ? prev.map((r) => r.id === msg.id ? { ...r, summary: msg.summary } : r) : prev
               );
+            } else if (msg.type === "synthesis_chunk") {
+              setSynthesis((prev) => prev + msg.text);
             } else if (msg.type === "empty") {
               setResults([]);
               setEmptyMessage(msg.message);
@@ -196,10 +200,27 @@ export default function SedsPage() {
             </div>
           </form>
 
+          <style>{`@keyframes blink { 0%, 100% { opacity: 0.4; } 50% { opacity: 0; } }`}</style>
+
           {/* Error */}
           {searchError && (
             <div style={{ marginBottom: 32, padding: "12px 16px", borderRadius: 8, background: "var(--sidebar-bg)", border: "1px solid var(--card-border)", fontSize: 13, color: "var(--muted)" }}>
               {searchError}
+            </div>
+          )}
+
+          {/* Synthesis overview */}
+          {synthesis.length > 0 && (
+            <div style={{ marginBottom: 32, padding: "16px 20px", borderRadius: 10, border: "0.5px solid var(--card-border)", background: "var(--sidebar-bg)" }}>
+              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 8 }}>
+                Overview
+              </p>
+              <p style={{ fontSize: 14, color: "var(--foreground)", lineHeight: 1.7, margin: 0 }}>
+                {synthesis}
+                {searching && (
+                  <span style={{ animation: "blink 1s step-end infinite", opacity: 0.4 }}>▋</span>
+                )}
+              </p>
             </div>
           )}
 
