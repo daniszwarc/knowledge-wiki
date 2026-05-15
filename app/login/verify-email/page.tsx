@@ -12,7 +12,11 @@ export default function VerifyEmailPage() {
   const [resendDisabled, setResendDisabled] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const didSend = useRef(false);
+
   useEffect(() => {
+    if (didSend.current) return;
+    didSend.current = true;
     fetch("/api/auth/send-email-code", { method: "POST" })
       .then(async (r) => {
         if (!r.ok) return;
