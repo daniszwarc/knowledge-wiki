@@ -15,12 +15,13 @@ interface Company {
   name: string;
 }
 
-type DocType = "process" | "article" | "sed";
+type DocType = "process" | "article" | "sed" | "video";
 
 type UploadResult =
   | { type: "process"; workflowId: string | null; workflowName: string; rulesExtracted: number; articleId: string | null }
   | { type: "article"; articleId: string | null; title: string }
-  | { type: "sed"; sedId: string; ticketNumber: string; projectTitle: string };
+  | { type: "sed"; sedId: string; ticketNumber: string; projectTitle: string }
+  | { type: "video"; videoId: string; title: string };
 
 const STAGES: [number, number, string][] = [
   [500, 8, "Uploading file…"],
@@ -37,6 +38,7 @@ const DOC_TYPES: { id: DocType; title: string; description: string }[] = [
   { id: "process", title: "Process document", description: "Extracts business rules into a workflow" },
   { id: "article", title: "Reference article", description: "How-to guide, training material, or both" },
   { id: "sed", title: "SED", description: "Small enhancement document" },
+  { id: "video", title: "Video guide", description: "SharePoint video with VTT transcript" },
 ];
 
 export default function UploadPage() {
@@ -70,6 +72,15 @@ export default function UploadPage() {
   const [sCompany, setSCompany] = useState("all");
   const sFileRef = useRef<HTMLInputElement>(null);
   const [sDragging, setSDragging] = useState(false);
+
+  // Video form
+  const [vFile, setVFile] = useState<File | null>(null);
+  const [vTitle, setVTitle] = useState("");
+  const [vDept, setVDept] = useState("");
+  const [vEmbedUrl, setVEmbedUrl] = useState("");
+  const [vCompany, setVCompany] = useState("all");
+  const vFileRef = useRef<HTMLInputElement>(null);
+  const [vDragging, setVDragging] = useState(false);
 
   // Shared state
   const [loading, setLoading] = useState(false);
@@ -182,7 +193,7 @@ export default function UploadPage() {
         window.dispatchEvent(new Event("wiki:content-updated"));
         router.refresh();
 
-      } else {
+      } else if (selectedType === "sed") {
         if (!sFile) return;
         fd.append("file", sFile);
         appendCompanyFields(fd, sCompany);
@@ -191,6 +202,22 @@ export default function UploadPage() {
         const json = await res.json();
         stopProgress(true);
         setResult({ type: "sed", sedId: json.sed_id, ticketNumber: json.ticket_number, projectTitle: json.project_title });
+        window.dispatchEvent(new Event("wiki:content-updated"));
+        router.refresh();
+
+      } else {
+        if (!vFile || !vTitle.trim() || !vDept.trim() || !vEmbedUrl.trim()) return;
+        fd.append("srt_file", vFile);
+        fd.append("title", vTitle.trim());
+        fd.append("department", vDept.trim());
+        fd.append("embed_url", vEmbedUrl.trim());
+        appendCompanyFields(fd, vCompany);
+        const res = await fetch("/api/upload/video", { method: "POST", body: fd });
+        if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
+        const json = await res.json();
+        stopProgress(true);
+        localStorage.setItem("lastDepartment", vDept.trim());
+        setResult({ type: "video", videoId: json.video_id, title: json.title });
         window.dispatchEvent(new Event("wiki:content-updated"));
         router.refresh();
       }
@@ -206,6 +233,7 @@ export default function UploadPage() {
     if (loading) return true;
     if (selectedType === "process") return !pFile || !pWorkflow.trim() || !pDept.trim();
     if (selectedType === "article") return !aFile || !aTitle.trim() || !aDept.trim() || aAppearsAs.size === 0;
+    if (selectedType === "video") return !vFile || !vTitle.trim() || !vDept.trim() || !vEmbedUrl.trim();
     return !sFile;
   }
 
@@ -264,7 +292,7 @@ export default function UploadPage() {
           </div>
 
           {/* Type selector */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 20 }}>
             {DOC_TYPES.map((dt) => {
               const selected = selectedType === dt.id;
               return (
@@ -331,9 +359,7 @@ export default function UploadPage() {
                       placeholder="Department"
                       style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
                     />
-                    <datalist id="dept-options">
-                      {departments.map((d) => (<option key={d} value={d} />))}
-                    </datalist>
+
                   </div>
                   <CompanyDropdown value={pCompany} onChange={setPCompany} />
                 </>
@@ -416,6 +442,53 @@ export default function UploadPage() {
                 </>
               )}
 
+              {/* ── Video guide ── */}
+              {selectedType === "video" && (
+                <>
+                  <div
+                    onClick={() => vFileRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); setVDragging(true); }}
+                    onDragLeave={() => setVDragging(false)}
+                    onDrop={(e) => { e.preventDefault(); setVDragging(false); const f = e.dataTransfer.files[0]; if (f) setVFile(f); }}
+                    style={{ ...dropzoneBase, border: `1.5px dashed ${vDragging ? "var(--foreground)" : "var(--card-border)"}`, background: vDragging ? "var(--card-hover-bg)" : "var(--sidebar-bg)" }}
+                  >
+                    <input ref={vFileRef} type="file" accept=".vtt" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) setVFile(f); }} />
+                    <span style={{ fontSize: 13, color: vFile ? "var(--foreground)" : "var(--muted-light)" }}>
+                      {vFile ? vFile.name : "Drop a VTT transcript file here, or click to browse"}
+                    </span>
+                    {!vFile && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>VTT only</div>}
+                  </div>
+                  <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+                    <input
+                      className="search-input"
+                      required
+                      value={vTitle}
+                      onChange={(e) => setVTitle(e.target.value)}
+                      placeholder="Video title"
+                      style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                    />
+                    <input
+                      className="search-input"
+                      list="dept-options"
+                      required
+                      value={vDept}
+                      onChange={(e) => setVDept(e.target.value)}
+                      placeholder="Department"
+                      style={{ flex: 1, padding: "9px 14px", fontSize: 13, borderRadius: 8 }}
+                    />
+                  </div>
+                  <input
+                    className="search-input"
+                    required
+                    value={vEmbedUrl}
+                    onChange={(e) => setVEmbedUrl(e.target.value)}
+                    placeholder="Paste SharePoint embed code or URL"
+                    style={{ width: "100%", padding: "9px 14px", fontSize: 13, borderRadius: 8, marginBottom: 14, boxSizing: "border-box" }}
+                  />
+                  <CompanyDropdown value={vCompany} onChange={setVCompany} />
+                </>
+              )}
+
               {/* ── SED ── */}
               {selectedType === "sed" && (
                 <>
@@ -446,6 +519,10 @@ export default function UploadPage() {
                   <CompanyDropdown value={sCompany} onChange={setSCompany} />
                 </>
               )}
+
+              <datalist id="dept-options">
+                {departments.map((d) => (<option key={d} value={d} />))}
+              </datalist>
 
               {/* Submit row */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
@@ -516,6 +593,15 @@ export default function UploadPage() {
                       <a href={`/sed/${result.sedId}`} style={{ color: "#15803d", fontWeight: 500 }}>
                         {result.ticketNumber} — {result.projectTitle}
                       </a>
+                    </span>
+                  )}
+                  {result.type === "video" && (
+                    <span style={{ color: "#15803d" }}>
+                      Published{" "}
+                      {result.videoId
+                        ? <a href={`/video/${result.videoId}`} style={{ color: "#15803d", fontWeight: 500 }}>{result.title}</a>
+                        : <strong>{result.title}</strong>
+                      }
                     </span>
                   )}
                 </div>

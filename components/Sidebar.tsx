@@ -32,6 +32,12 @@ interface NavSed {
   department: string | null;
 }
 
+interface NavVideo {
+  id: string;
+  title: string;
+  department: string;
+}
+
 interface SidebarNavData {
   businessRules: NavDeptWorkflows[];
   howToGuides: NavDeptArticles[];
@@ -44,7 +50,7 @@ interface Me {
   role: string;
 }
 
-type Section = "businessRules" | "referenceArticles" | "seds";
+type Section = "businessRules" | "referenceArticles" | "seds" | "videoGuides";
 type SubSection = "howToGuides" | "trainingMaterial";
 
 function detectActive(
@@ -212,21 +218,25 @@ export function Sidebar({
   activeWorkflowId,
   activeArticleId,
   activeSedId,
+  activeVideoId,
   me,
   refreshKey,
 }: {
   activeWorkflowId?: string;
   activeArticleId?: string;
   activeSedId?: string;
+  activeVideoId?: string;
   me?: Me | null;
   refreshKey?: number;
 }) {
   const [nav, setNav] = useState<SidebarNavData | null>(null);
   const [seds, setSeds] = useState<NavSed[]>([]);
+  const [videos, setVideos] = useState<NavVideo[]>([]);
   const [openSections, setOpenSections] = useState<Record<Section, boolean>>({
     businessRules: false,
     referenceArticles: false,
     seds: false,
+    videoGuides: false,
   });
   const [openSubSections, setOpenSubSections] = useState<Record<SubSection, boolean>>({
     howToGuides: false,
@@ -255,10 +265,13 @@ export function Sidebar({
           if (activeSedId) {
             setOpenSections((p) => ({ ...p, seds: true }));
           }
+          if (activeVideoId) {
+            setOpenSections((p) => ({ ...p, videoGuides: true }));
+          }
         }
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkflowId, activeArticleId, activeSedId, refreshKey]);
+  }, [activeWorkflowId, activeArticleId, activeSedId, activeVideoId, refreshKey]);
 
   useEffect(() => {
     if (!openSections.seds) return;
@@ -268,6 +281,15 @@ export function Sidebar({
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openSections.seds]);
+
+  useEffect(() => {
+    if (!openSections.videoGuides) return;
+    fetch("/api/videos")
+      .then((r) => r.json())
+      .then((data: NavVideo[]) => setVideos(data))
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSections.videoGuides]);
 
   useEffect(() => {
     const handler = () => {
@@ -280,10 +302,16 @@ export function Sidebar({
           .then((data: NavSed[]) => setSeds(data))
           .catch(() => {});
       }
+      if (openSections.videoGuides) {
+        fetch("/api/videos")
+          .then((r) => r.json())
+          .then((data: NavVideo[]) => setVideos(data))
+          .catch(() => {});
+      }
     };
     window.addEventListener("wiki:content-updated", handler);
     return () => window.removeEventListener("wiki:content-updated", handler);
-  }, [openSections.seds]);
+  }, [openSections.seds, openSections.videoGuides]);
 
   function toggleSection(s: Section) {
     setOpenSections((p) => ({ ...p, [s]: !p[s] }));
@@ -430,6 +458,69 @@ export function Sidebar({
                     </div>
                   );
                 })}
+              </>
+            )}
+
+            {SECTION_SEPARATOR}
+
+            {/* ── Video guides ── */}
+            <SectionHeader
+              label="Video guides"
+              open={openSections.videoGuides}
+              onToggle={() => toggleSection("videoGuides")}
+            />
+            {openSections.videoGuides && (
+              <>
+                {(() => {
+                  const grouped: Record<string, NavVideo[]> = {};
+                  for (const v of videos) {
+                    if (!grouped[v.department]) grouped[v.department] = [];
+                    grouped[v.department].push(v);
+                  }
+                  return Object.entries(grouped).map(([dept, items]) => {
+                    const key = `videoGuides:${dept}`;
+                    const open = isDeptOpen(key);
+                    return (
+                      <div key={dept}>
+                        <DeptHeader
+                          label={dept}
+                          badge={String(items.length)}
+                          open={open}
+                          onToggle={() => toggleDept(key)}
+                        />
+                        {open && (
+                          <div style={{ marginLeft: 28, paddingLeft: 10, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
+                            {items.map((v) => {
+                              const active = v.id === activeVideoId;
+                              return (
+                                <a
+                                  key={v.id}
+                                  href={`/video/${v.id}`}
+                                  style={{
+                                    display: "flex", alignItems: "center", gap: 6,
+                                    padding: "5px 8px", fontSize: 12,
+                                    color: active ? "var(--foreground)" : "var(--muted)",
+                                    fontWeight: active ? 600 : 400,
+                                    background: active ? "var(--card-hover-bg)" : "none",
+                                    textDecoration: "none", borderRadius: 5,
+                                    borderLeft: active ? "2px solid var(--foreground)" : "2px solid transparent",
+                                    marginLeft: -2,
+                                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                                  }}
+                                  onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "var(--card-hover-bg)"; e.currentTarget.style.color = "var(--foreground)"; } }}
+                                  onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--muted)"; } }}
+                                >
+                                  <span style={{ flexShrink: 0 }}>▶</span>
+                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.title}</span>
+                                </a>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
               </>
             )}
 
