@@ -109,7 +109,7 @@ export default function VideoPage() {
           </a>
         </div>
 
-        <div style={{ maxWidth: 720, width: "100%", padding: "48px 32px 80px", overflowWrap: "break-word", wordBreak: "break-word" }}>
+        <div style={{ maxWidth: video.toc && video.toc.length >= 5 ? 1100 : 720, width: "100%", padding: "48px 32px 80px" }}>
 
           {/* Badges */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
@@ -144,41 +144,49 @@ export default function VideoPage() {
             </div>
           )}
 
-          {/* Embed player */}
-          <div style={{ marginBottom: 28 }}>
-            <iframe
-              src={video.embed_url}
-              width="100%"
-              height="450"
-              allowFullScreen
-              style={{ display: "block", borderRadius: 8, border: "none" }}
-            />
-          </div>
+          {/* Two-column layout when TOC has 5+ items */}
+          <div style={{ display: "grid", gridTemplateColumns: video.toc && video.toc.length >= 5 ? "1fr 300px" : "1fr", gap: 32, alignItems: "start" }}>
 
-          {/* Table of contents */}
-          {video.toc && video.toc.length > 0 && (
-            <div style={{ marginBottom: 32 }}>
-              <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12, color: "var(--foreground)" }}>Contents</h2>
-              <ol style={{ margin: 0, padding: 0, listStyle: "none" }}>
-                {video.toc.map((item, i) => (
-                  <li key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: "1px solid var(--card-border)" }}>
-                    <span style={{ fontSize: 12, color: "var(--muted-light)", minWidth: 20 }}>{i + 1}.</span>
-                    <span style={{ fontSize: 13, color: "var(--foreground)", flex: 1 }}>{item.title}</span>
-                    <span style={{ fontSize: 12, color: "var(--muted)", fontFeatureSettings: '"tnum"' }}>{item.timestamp}</span>
-                  </li>
-                ))}
-              </ol>
+            {/* Left column: player + guide */}
+            <div>
+              {/* Embed player */}
+              <div style={{ marginBottom: 28 }}>
+                <iframe
+                  src={video.embed_url}
+                  width="100%"
+                  height="450"
+                  allowFullScreen
+                  style={{ display: "block", borderRadius: 8, border: "none" }}
+                />
+              </div>
+
+              {/* Step-by-step guide */}
+              {video.content && (
+                <div
+                  className="article-prose"
+                  style={{ lineHeight: 1.8, color: "var(--foreground)", fontSize: 15, marginBottom: 32 }}
+                  dangerouslySetInnerHTML={{ __html: video.content }}
+                />
+              )}
             </div>
-          )}
 
-          {/* Step-by-step guide */}
-          {video.content && (
-            <div
-              className="article-prose"
-              style={{ lineHeight: 1.8, color: "var(--foreground)", fontSize: 15, marginBottom: 32 }}
-              dangerouslySetInnerHTML={{ __html: video.content }}
-            />
-          )}
+            {/* Right column: TOC */}
+            {video.toc && video.toc.length >= 5 && (
+              <div style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "16px 20px", background: "var(--sidebar-bg)" }}>
+                <h2 style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 12 }}>Contents</h2>
+                <ol style={{ margin: 0, padding: 0, listStyle: "none" }}>
+                  {video.toc.map((item, i) => (
+                    <li key={i} style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--card-border)" }}>
+                      <span style={{ fontSize: 11, color: "var(--muted-light)", minWidth: 16, flexShrink: 0 }}>{i + 1}.</span>
+                      <span style={{ fontSize: 12, color: "var(--foreground)", flex: 1, lineHeight: 1.4 }}>{item.title}</span>
+                      <span style={{ fontSize: 11, color: "var(--muted)", fontFeatureSettings: '"tnum"', flexShrink: 0 }}>{item.timestamp}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
+          </div>
 
           {/* Validation */}
           <div style={{ marginTop: 48, paddingTop: 24, borderTop: "1px solid var(--card-border)" }}>
