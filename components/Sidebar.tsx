@@ -653,6 +653,9 @@ export function Sidebar({
             <p style={{ fontSize: 10, color: "var(--muted-light)", opacity: 0.7, marginBottom: 6, textTransform: "capitalize" }}>
               {me.role}
             </p>
+            <a href="/account" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "2px 0", marginBottom: 4 }}>
+              Account
+            </a>
             <form action="/api/auth/logout" method="POST">
               <button type="submit" style={{ fontSize: 11, color: "var(--muted)", background: "none", border: "none", padding: 0, cursor: "pointer", textDecoration: "underline" }}>
                 Sign out

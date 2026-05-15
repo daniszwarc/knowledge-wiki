@@ -14,6 +14,7 @@ export interface User {
   created_at: string;
   last_login: string | null;
   created_by: string | null;
+  must_change_password: boolean;
 }
 
 // ── Passwords ─────────────────────────────────────────────────────────────────
@@ -145,7 +146,7 @@ export async function updateTempTokenSecret(token: string, secret: string): Prom
 
 export async function getUserById(id: string): Promise<User | null> {
   const rows = await query<User>(
-    `SELECT id, email, role, totp_secret, totp_enabled, two_fa_method, created_at, last_login, created_by
+    `SELECT id, email, role, totp_secret, totp_enabled, two_fa_method, created_at, last_login, created_by, must_change_password
      FROM users WHERE id = $1`,
     [id]
   );
@@ -205,4 +206,47 @@ export async function getTwoFaMethod(userId: string): Promise<"totp" | "email"> 
   );
   const m = rows[0]?.two_fa_method;
   return m === "email" ? "email" : "totp";
+}
+
+// ── Password reset ─────────────────────────────────────────────────────────────
+
+export async function generatePasswordResetToken(userId: string): Promise<string> {
+  const token = crypto.randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+  await query(
+    `INSERT INTO password_reset_tokens (user_id, token, expires_at)
+     VALUES ($1, $2, $3)`,
+    [userId, token, expiresAt.toISOString()]
+  );
+  return token;
+}
+
+export async function validatePasswordResetToken(token: string): Promise<{ userId: string } | null> {
+  const rows = await query<{ user_id: string }>(
+    `SELECT user_id FROM password_reset_tokens
+     WHERE token = $1 AND used = false AND expires_at > now()`,
+    [token]
+  );
+  return rows[0] ? { userId: rows[0].user_id } : null;
+}
+
+export async function usePasswordResetToken(token: string): Promise<void> {
+  await query(`UPDATE password_reset_tokens SET used = true WHERE token = $1`, [token]);
+}
+
+export async function updatePassword(userId: string, newPassword: string): Promise<void> {
+  const hash = await bcrypt.hash(newPassword, 12);
+  await query(
+    `UPDATE users SET password_hash = $1, must_change_password = false WHERE id = $2`,
+    [hash, userId]
+  );
+}
+
+export async function verifyCurrentPassword(userId: string, currentPassword: string): Promise<boolean> {
+  const rows = await query<{ password_hash: string }>(
+    `SELECT password_hash FROM users WHERE id = $1`,
+    [userId]
+  );
+  if (rows.length === 0) return false;
+  return bcrypt.compare(currentPassword, rows[0].password_hash);
 }

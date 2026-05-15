@@ -18,3 +18,12 @@ export async function sendVerificationCode(to: string, code: string): Promise<vo
     text: `Your login code is: ${code}. It expires in 10 minutes. If you did not request this, please ignore this email.`,
   });
 }
+
+export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
+  await transporter.sendMail({
+    from: `"APiWiki" <${process.env.GMAIL_USER}>`,
+    to,
+    subject: "Reset your APiWiki password",
+    text: `You requested a password reset. Click the link below to set a new password. This link expires in 15 minutes.\n\n${resetUrl}\n\nIf you did not request this, you can ignore this email.`,
+  });
+}

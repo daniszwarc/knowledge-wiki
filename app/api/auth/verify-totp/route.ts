@@ -48,7 +48,11 @@ export async function POST(req: NextRequest) {
     const ip = req.headers.get("x-forwarded-for") ?? "unknown";
     const sessionToken = await createSession(user.id, ip);
 
-    const response = NextResponse.json({ success: true, role: user.role });
+    const response = NextResponse.json({
+      success: true,
+      role: user.role,
+      mustChangePassword: user.must_change_password ?? false,
+    });
     response.cookies.set("wiki_session", sessionToken, {
       httpOnly: true,
       path: "/",

@@ -32,7 +32,11 @@ export default function VerifyTOTPPage() {
         return;
       }
 
-      router.push("/");
+      if (data.mustChangePassword) {
+        router.push("/account?setup=true");
+      } else {
+        router.push("/");
+      }
     } finally {
       setLoading(false);
     }

@@ -22,5 +22,18 @@ export async function GET(req: NextRequest) {
     [session.userId]
   );
 
-  return NextResponse.json({ id: session.userId, email: session.email, role: session.role, companies });
+  const userRows = await query<{ two_fa_method: string; created_at: string }>(
+    `SELECT two_fa_method, created_at FROM users WHERE id = $1`,
+    [session.userId]
+  );
+  const userExtra = userRows[0];
+
+  return NextResponse.json({
+    id: session.userId,
+    email: session.email,
+    role: session.role,
+    two_fa_method: userExtra?.two_fa_method ?? "totp",
+    created_at: userExtra?.created_at ?? null,
+    companies,
+  });
 }

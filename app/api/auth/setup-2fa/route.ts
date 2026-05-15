@@ -75,7 +75,11 @@ export async function POST(req: NextRequest) {
     const sessionToken = await createSession(temp.userId, ip);
 
     const user = await getUserById(temp.userId);
-    const response = NextResponse.json({ success: true, role: user?.role });
+    const response = NextResponse.json({
+      success: true,
+      role: user?.role,
+      mustChangePassword: user?.must_change_password ?? false,
+    });
     response.cookies.set("wiki_session", sessionToken, {
       httpOnly: true,
       path: "/",

@@ -21,11 +21,16 @@ export async function PATCH(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const err = requireAdmin(req);
-  if (err) return err;
-
   const { id } = await params;
   const body = await req.json();
+
+  // Allow any authenticated user to reset their own 2FA
+  const isSelfReset = body.reset2fa === true && id === session.userId && Object.keys(body).length === 1;
+
+  if (!isSelfReset) {
+    const err = requireAdmin(req);
+    if (err) return err;
+  }
 
   if (body.role !== undefined) {
     await query(`UPDATE users SET role = $1 WHERE id = $2`, [body.role, id]);

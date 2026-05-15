@@ -110,7 +110,11 @@ export default function Setup2FAPage() {
         setCode("");
         return;
       }
-      router.push("/");
+      if (data.mustChangePassword) {
+        router.push("/account?setup=true");
+      } else {
+        router.push("/");
+      }
     } finally {
       setLoading(false);
     }
@@ -133,7 +137,11 @@ export default function Setup2FAPage() {
         setCode("");
         return;
       }
-      router.push("/");
+      if (data.mustChangePassword) {
+        router.push("/account?setup=true");
+      } else {
+        router.push("/");
+      }
     } finally {
       setLoading(false);
     }

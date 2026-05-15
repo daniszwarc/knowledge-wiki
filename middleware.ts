@@ -4,6 +4,8 @@ const PUBLIC_PATHS = [
   "/login",
   "/login/verify",
   "/login/setup-2fa",
+  "/login/forgot-password",
+  "/login/reset-password",
   "/api/auth/",
   "/api/embed",
   "/api/articles/embed",

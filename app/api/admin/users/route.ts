@@ -76,8 +76,8 @@ export async function POST(req: NextRequest) {
 
   const hash = await hashPassword(password);
   const rows = await query<{ id: string }>(
-    `INSERT INTO users (email, password_hash, role, totp_enabled, created_by)
-     VALUES ($1, $2, $3, false, $4) RETURNING id`,
+    `INSERT INTO users (email, password_hash, role, totp_enabled, must_change_password, created_by)
+     VALUES ($1, $2, $3, false, true, $4) RETURNING id`,
     [email.toLowerCase().trim(), hash, role, session.email]
   );
 
