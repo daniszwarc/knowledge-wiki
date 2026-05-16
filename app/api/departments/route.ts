@@ -7,6 +7,10 @@ export async function GET() {
       `SELECT department FROM workflows WHERE department IS NOT NULL AND department <> ''
        UNION
        SELECT department FROM articles WHERE department IS NOT NULL AND department <> ''
+       UNION
+       SELECT department FROM videos WHERE department IS NOT NULL AND department <> ''
+       UNION
+       SELECT department FROM seds WHERE department IS NOT NULL AND department <> ''
        ORDER BY department`
     );
     return NextResponse.json(rows.map((r) => r.department));
