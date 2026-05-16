@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 
 interface Video {
@@ -19,8 +19,14 @@ interface Video {
   created_at: string;
 }
 
+function execCmd(cmd: string, editorRef: React.RefObject<HTMLDivElement | null>, value?: string) {
+  editorRef.current?.focus();
+  document.execCommand(cmd, false, value);
+}
+
 export default function VideoPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
   const [video, setVideo] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,6 +39,14 @@ export default function VideoPage() {
   const [validated, setValidated] = useState(false);
   const [validatedBy, setValidatedBy] = useState<string | null>(null);
   const [validatedAt, setValidatedAt] = useState<string | null>(null);
+
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const editorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -77,6 +91,50 @@ export default function VideoPage() {
     }
   }
 
+  function startEditing() {
+    setEditing(true);
+    setSaveError("");
+    setTimeout(() => {
+      if (editorRef.current) {
+        editorRef.current.innerHTML = video?.content ?? "";
+        editorRef.current.focus();
+      }
+    }, 0);
+  }
+
+  function cancelEditing() {
+    if (editorRef.current) {
+      editorRef.current.innerHTML = video?.content ?? "";
+    }
+    setEditing(false);
+    setSaveError("");
+  }
+
+  async function saveContent() {
+    if (!editorRef.current) return;
+    const innerHTML = editorRef.current.innerHTML;
+    setSaving(true);
+    setSaveError("");
+    try {
+      const res = await fetch(`/api/videos/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: innerHTML }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setSaveError((err as { error?: string }).error ?? "Save failed");
+        return;
+      }
+      setVideo((prev) => prev ? { ...prev, content: innerHTML } : prev);
+      setEditing(false);
+    } catch {
+      setSaveError("Network error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (loading) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "var(--muted)", fontFamily: "var(--font-geist-sans), system-ui, sans-serif" }}>
@@ -94,6 +152,18 @@ export default function VideoPage() {
   }
 
   const canValidate = me && ["validator", "editor", "admin", "developer"].includes(me.role);
+  const canEdit = me && ["admin", "developer"].includes(me.role);
+  const canDelete = me && ["editor", "admin", "developer"].includes(me.role);
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await fetch(`/api/videos/${id}`, { method: "DELETE" });
+      router.push("/");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden", background: "var(--background)", fontFamily: "var(--font-geist-sans), system-ui, sans-serif" }}>
@@ -160,13 +230,105 @@ export default function VideoPage() {
                 />
               </div>
 
-              {/* Step-by-step guide */}
+              {/* Step-by-step guide heading + controls */}
               {video.content && (
-                <div
-                  className="article-prose"
-                  style={{ lineHeight: 1.8, color: "var(--foreground)", fontSize: 15, marginBottom: 32 }}
-                  dangerouslySetInnerHTML={{ __html: video.content }}
-                />
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--foreground)", margin: 0 }}>Step-by-step guide</h2>
+                    {canEdit && !editing && (
+                      <button
+                        onClick={startEditing}
+                        style={{
+                          fontSize: 12, padding: "4px 12px", borderRadius: 6,
+                          border: "1px solid var(--card-border)", background: "var(--sidebar-bg)",
+                          color: "var(--foreground)", cursor: "pointer",
+                        }}
+                      >
+                        Edit guide
+                      </button>
+                    )}
+                    {canEdit && editing && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        {saveError && <span style={{ fontSize: 12, color: "#dc2626" }}>{saveError}</span>}
+                        <button
+                          onClick={saveContent}
+                          disabled={saving}
+                          style={{
+                            fontSize: 12, padding: "4px 12px", borderRadius: 6,
+                            border: "1px solid #86efac", background: "#f0fdf4", color: "#15803d",
+                            cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.6 : 1,
+                          }}
+                        >
+                          {saving ? "Saving…" : "Save"}
+                        </button>
+                        <button
+                          onClick={cancelEditing}
+                          disabled={saving}
+                          style={{
+                            fontSize: 12, padding: "4px 10px", borderRadius: 6,
+                            border: "1px solid var(--card-border)", background: "none",
+                            color: "var(--muted)", cursor: "pointer",
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Toolbar */}
+                  {editing && (
+                    <div style={{
+                      display: "flex", gap: 4, flexWrap: "wrap",
+                      background: "var(--card-bg)", border: "1px solid var(--card-border)",
+                      borderRadius: "8px 8px 0 0", padding: "6px 10px",
+                      borderBottom: "1px solid var(--card-border)",
+                    }}>
+                      {[
+                        { label: "H2", action: () => document.execCommand("formatBlock", false, "h2") },
+                        { label: "Bold", action: () => execCmd("bold", editorRef) },
+                        { label: "Italic", action: () => execCmd("italic", editorRef) },
+                        { label: "¶", title: "Paragraph", action: () => document.execCommand("formatBlock", false, "p") },
+                        { label: "↩ Undo", action: () => execCmd("undo", editorRef) },
+                        { label: "↪ Redo", action: () => execCmd("redo", editorRef) },
+                      ].map((btn) => (
+                        <button
+                          key={btn.label}
+                          title={btn.title ?? btn.label}
+                          onMouseDown={(e) => { e.preventDefault(); btn.action(); }}
+                          style={{
+                            fontSize: 11, fontWeight: 500,
+                            padding: "3px 8px", borderRadius: 4,
+                            border: "1px solid var(--card-border)",
+                            background: "var(--sidebar-bg)", color: "var(--foreground)",
+                            cursor: "pointer", lineHeight: 1.4,
+                          }}
+                        >
+                          {btn.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Content area */}
+                  <div
+                    ref={editorRef}
+                    contentEditable={editing}
+                    suppressContentEditableWarning
+                    className="article-prose"
+                    style={{
+                      lineHeight: 1.8,
+                      color: "var(--foreground)",
+                      fontSize: 15,
+                      marginBottom: 32,
+                      outline: editing ? "2px solid var(--card-border)" : "none",
+                      borderRadius: editing ? "0 0 8px 8px" : 0,
+                      padding: editing ? "12px 16px" : 0,
+                      minHeight: editing ? 200 : "auto",
+                    }}
+                    dangerouslySetInnerHTML={editing ? undefined : { __html: video.content ?? "" }}
+                  />
+                </div>
               )}
             </div>
 
@@ -246,6 +408,46 @@ export default function VideoPage() {
               </div>
             ) : null}
           </div>
+
+          {/* Delete */}
+          {canDelete && (
+            <div style={{ marginTop: 32, paddingTop: 24, borderTop: "1px solid var(--card-border)" }}>
+              {deleteConfirm ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 13, color: "var(--muted)" }}>Are you sure you want to delete this video? This cannot be undone.</span>
+                  <button
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    style={{
+                      fontSize: 12, padding: "5px 14px", borderRadius: 6,
+                      border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c",
+                      cursor: deleting ? "not-allowed" : "pointer", fontWeight: 500,
+                      opacity: deleting ? 0.6 : 1,
+                    }}
+                  >
+                    {deleting ? "Deleting…" : "Yes, delete"}
+                  </button>
+                  <button
+                    onClick={() => setDeleteConfirm(false)}
+                    style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "1px solid var(--card-border)", background: "none", color: "var(--muted)", cursor: "pointer" }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setDeleteConfirm(true)}
+                  style={{
+                    fontSize: 12, padding: "5px 14px", borderRadius: 6,
+                    border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c",
+                    cursor: "pointer",
+                  }}
+                >
+                  Delete video
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <style>{`

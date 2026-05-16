@@ -89,7 +89,15 @@ export async function POST(req: NextRequest) {
   let content = "";
   try {
     const contentRaw = await llmChat(
-      `Based on this video transcript, generate a step-by-step guide as HTML. Use <h2 data-seconds="SECONDS"> for section headings (replace SECONDS with the timestamp in seconds as a number) and <p> tags for steps. Return only the HTML, no markdown fences, no extra text.\n\nTranscript with timestamps:\n${transcriptWithTimestamps}`
+      `You are a technical documentation writer. Convert this video transcript into a structured step-by-step guide.\n\n` +
+      `Rules:\n` +
+      `- Identify 4-8 distinct steps or sections from the content\n` +
+      `- Each section gets an <h2 data-seconds="SECONDS"> heading where SECONDS is the timestamp in seconds when that topic starts\n` +
+      `- Under each heading, write 1-3 <p> tags explaining what happens in plain language\n` +
+      `- Do NOT copy the transcript word for word — rewrite it as clear instructions\n` +
+      `- Use active voice: "Click the button" not "The button is clicked"\n` +
+      `- Return only valid HTML with <h2> and <p> tags, no markdown, no code fences, no extra text\n\n` +
+      `Transcript with timestamps:\n${transcriptWithTimestamps}`
     );
     content = contentRaw.replace(/^```[a-z]*\n?/, "").replace(/```\s*$/, "").trim();
   } catch {
