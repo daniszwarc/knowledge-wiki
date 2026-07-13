@@ -41,7 +41,7 @@ export async function generateQRCode(email: string, secret: string): Promise<str
 export function verifyTOTP(token: string, secret: string): boolean {
   try {
     // verifySync returns { valid: boolean, ... }
-    const result = otplibVerify({ token, secret }) as unknown as { valid: boolean };
+    const result = otplibVerify({ token, secret, epochTolerance: 30 }) as unknown as { valid: boolean };
     return result.valid === true;
   } catch {
     return false;
