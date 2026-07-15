@@ -17,6 +17,15 @@ interface Company {
 
 type DocType = "process" | "article" | "sed" | "video";
 
+type SFileStatus = "pending" | "processing" | "success" | "error";
+
+interface SFileItem {
+  id: string;
+  file: File;
+  status: SFileStatus;
+  error?: string;
+}
+
 type UploadResult =
   | { type: "process"; workflowId: string | null; workflowName: string; rulesExtracted: number; articleId: string | null }
   | { type: "article"; articleId: string | null; title: string }
@@ -68,10 +77,11 @@ export default function UploadPage() {
   const [aDragging, setADragging] = useState(false);
 
   // SED form
-  const [sFile, setSFile] = useState<File | null>(null);
+  const [sFiles, setSFiles] = useState<SFileItem[]>([]);
   const [sCompany, setSCompany] = useState("all");
   const sFileRef = useRef<HTMLInputElement>(null);
   const [sDragging, setSDragging] = useState(false);
+  const [sSummary, setSSummary] = useState<{ succeeded: number; failed: number } | null>(null);
 
   // Video form
   const [vFile, setVFile] = useState<File | null>(null);
@@ -194,14 +204,32 @@ export default function UploadPage() {
         router.refresh();
 
       } else if (selectedType === "sed") {
-        if (!sFile) return;
-        fd.append("file", sFile);
-        appendCompanyFields(fd, sCompany);
-        const res = await fetch("/api/upload/sed", { method: "POST", body: fd });
-        if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
-        const json = await res.json();
+        if (sFiles.length === 0) return;
+        setSSummary(null);
+
+        let succeeded = 0;
+        let failed = 0;
+
+        for (const item of sFiles) {
+          setSFiles((prev) => prev.map((f) => (f.id === item.id ? { ...f, status: "processing", error: undefined } : f)));
+          try {
+            const sfd = new FormData();
+            sfd.append("file", item.file);
+            appendCompanyFields(sfd, sCompany);
+            const res = await fetch("/api/upload/sed", { method: "POST", body: sfd });
+            if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
+            await res.json();
+            succeeded++;
+            setSFiles((prev) => prev.map((f) => (f.id === item.id ? { ...f, status: "success" } : f)));
+          } catch (err) {
+            failed++;
+            const message = err instanceof Error ? err.message : "Upload failed";
+            setSFiles((prev) => prev.map((f) => (f.id === item.id ? { ...f, status: "error", error: message } : f)));
+          }
+        }
+
         stopProgress(true);
-        setResult({ type: "sed", sedId: json.sed_id, ticketNumber: json.ticket_number, projectTitle: json.project_title });
+        setSSummary({ succeeded, failed });
         window.dispatchEvent(new Event("wiki:content-updated"));
         router.refresh();
 
@@ -234,7 +262,7 @@ export default function UploadPage() {
     if (selectedType === "process") return !pFile || !pWorkflow.trim() || !pDept.trim();
     if (selectedType === "article") return !aFile || !aTitle.trim() || !aDept.trim() || aAppearsAs.size === 0;
     if (selectedType === "video") return !vFile || !vTitle.trim() || !vDept.trim() || !vEmbedUrl.trim();
-    return !sFile;
+    return sFiles.length === 0;
   }
 
   const dropzoneBase: React.CSSProperties = {
@@ -244,6 +272,13 @@ export default function UploadPage() {
     cursor: "pointer",
     transition: "background 0.15s, border-color 0.15s",
     marginBottom: 14,
+  };
+
+  const SED_STATUS_COLORS: Record<SFileStatus, { bg: string; fg: string }> = {
+    pending: { bg: "var(--sidebar-bg)", fg: "var(--muted)" },
+    processing: { bg: "#fef9c3", fg: "#854d0e" },
+    success: { bg: "#dcfce7", fg: "#15803d" },
+    error: { bg: "#fee2e2", fg: "#b91c1c" },
   };
 
   const companySelectStyle: React.CSSProperties = {
@@ -496,15 +531,75 @@ export default function UploadPage() {
                     onClick={() => sFileRef.current?.click()}
                     onDragOver={(e) => { e.preventDefault(); setSDragging(true); }}
                     onDragLeave={() => setSDragging(false)}
-                    onDrop={(e) => { e.preventDefault(); setSDragging(false); const f = e.dataTransfer.files[0]; if (f) setSFile(f); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setSDragging(false);
+                      const files = Array.from(e.dataTransfer.files);
+                      if (files.length > 0) {
+                        setSFiles(files.map((f) => ({ id: `${f.name}-${f.lastModified}-${Math.random()}`, file: f, status: "pending" })));
+                        setSSummary(null);
+                      }
+                    }}
                     style={{ ...dropzoneBase, border: `1.5px dashed ${sDragging ? "var(--foreground)" : "var(--card-border)"}`, background: sDragging ? "var(--card-hover-bg)" : "var(--sidebar-bg)" }}
                   >
-                    <input ref={sFileRef} type="file" accept=".docx" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) setSFile(f); }} />
-                    <span style={{ fontSize: 13, color: sFile ? "var(--foreground)" : "var(--muted-light)" }}>
-                      {sFile ? sFile.name : "Drop a DOCX file here, or click to browse"}
+                    <input
+                      ref={sFileRef}
+                      type="file"
+                      accept=".docx"
+                      multiple
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const files = e.target.files ? Array.from(e.target.files) : [];
+                        if (files.length > 0) {
+                          setSFiles(files.map((f) => ({ id: `${f.name}-${f.lastModified}-${Math.random()}`, file: f, status: "pending" })));
+                          setSSummary(null);
+                        }
+                      }}
+                    />
+                    <span style={{ fontSize: 13, color: sFiles.length > 0 ? "var(--foreground)" : "var(--muted-light)" }}>
+                      {sFiles.length > 0 ? sFiles.map((f) => f.file.name).join(", ") : "Drop one or more DOCX files here, or click to browse"}
                     </span>
-                    {!sFile && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>DOCX only</div>}
+                    {sFiles.length === 0 && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>DOCX only</div>}
                   </div>
+
+                  {sFiles.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+                      {sFiles.map((f) => (
+                        <div
+                          key={f.id}
+                          style={{
+                            display: "flex", flexDirection: "column", gap: 2,
+                            fontSize: 12, padding: "6px 10px", borderRadius: 6,
+                            border: "1px solid var(--card-border)",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                            <span style={{ color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {f.file.name}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 999,
+                                background: SED_STATUS_COLORS[f.status].bg, color: SED_STATUS_COLORS[f.status].fg,
+                                textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap",
+                              }}
+                            >
+                              {f.status}
+                            </span>
+                          </div>
+                          {f.status === "error" && f.error && (
+                            <span style={{ fontSize: 11, color: "#b91c1c" }}>{f.error}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {sSummary && (
+                    <p style={{ fontSize: 12, color: "var(--foreground)", margin: "0 0 14px", fontWeight: 600 }}>
+                      {sSummary.succeeded} succeeded, {sSummary.failed} failed
+                    </p>
+                  )}
                   <div style={{
                     border: "0.5px solid var(--card-border)", borderRadius: 8,
                     padding: "12px 16px", marginBottom: 14, background: "var(--sidebar-bg)",
