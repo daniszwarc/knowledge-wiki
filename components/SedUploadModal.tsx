@@ -172,7 +172,7 @@ export function SedUploadModal({ onClose, onSuccess }: SedUploadModalProps) {
               }}
             />
             <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 4px" }}>
-              Drop .docx files here or click to browse
+              Drop one or more DOCX files here, or click to browse
             </p>
             <p style={{ fontSize: 11, color: "var(--muted-light)", margin: 0 }}>
               .docx only · multiple files supported
