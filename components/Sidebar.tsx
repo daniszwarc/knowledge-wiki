@@ -29,7 +29,8 @@ interface NavSed {
   id: string;
   ticket_number: string;
   project_title: string;
-  department: string | null;
+  date: string | null;
+  created_at: string;
 }
 
 interface NavVideo {
@@ -243,6 +244,7 @@ export function Sidebar({
     trainingMaterial: false,
   });
   const [openDepts, setOpenDepts] = useState<Record<string, boolean>>({});
+  const [sedSearch, setSedSearch] = useState("");
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -551,59 +553,77 @@ export function Sidebar({
               </button>
             </div>
             {openSections.seds && (
-              <>
+              <div style={{ padding: "2px 16px 8px" }}>
+                <input
+                  type="text"
+                  value={sedSearch}
+                  onChange={(e) => setSedSearch(e.target.value)}
+                  placeholder="Search SED # or title…"
+                  style={{
+                    width: "100%", boxSizing: "border-box",
+                    fontSize: 12, padding: "6px 8px", borderRadius: 6,
+                    border: "1px solid var(--card-border)",
+                    background: "var(--sidebar-bg)", color: "var(--foreground)",
+                    outline: "none", marginBottom: 4,
+                  }}
+                />
                 {(() => {
-                  const grouped: Record<string, NavSed[]> = {};
-                  for (const s of seds) {
-                    const dept = s.department ?? "Other";
-                    if (!grouped[dept]) grouped[dept] = [];
-                    grouped[dept].push(s);
-                  }
-                  return Object.entries(grouped).map(([dept, items]) => {
-                    const key = `seds:${dept}`;
-                    const open = isDeptOpen(key);
-                    return (
-                      <div key={dept}>
-                        <DeptHeader
-                          label={dept}
-                          badge={String(items.length)}
-                          open={open}
-                          onToggle={() => toggleDept(key)}
-                        />
-                        {open && (
-                          <div style={{ marginLeft: 28, paddingLeft: 10, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
-                            {items.map((s) => {
-                              const active = s.id === activeSedId;
-                              const label = `${s.ticket_number} — ${s.project_title}`.slice(0, 40);
-                              return (
-                                <a
-                                  key={s.id}
-                                  href={`/sed/${s.id}`}
-                                  style={{
-                                    display: "flex", alignItems: "center", gap: 6,
-                                    padding: "5px 8px", fontSize: 12,
-                                    color: active ? "var(--foreground)" : "var(--muted)",
-                                    fontWeight: active ? 600 : 400,
-                                    background: active ? "var(--card-hover-bg)" : "none",
-                                    textDecoration: "none", borderRadius: 5,
-                                    borderLeft: active ? "2px solid var(--foreground)" : "2px solid transparent",
-                                    marginLeft: -2,
-                                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                                  }}
-                                  onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "var(--card-hover-bg)"; e.currentTarget.style.color = "var(--foreground)"; } }}
-                                  onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--muted)"; } }}
-                                >
-                                  {label}
-                                </a>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
+                  const q = sedSearch.trim().toLowerCase();
+                  const filtered = q
+                    ? seds.filter(
+                        (s) =>
+                          s.ticket_number.toLowerCase().includes(q) ||
+                          s.project_title.toLowerCase().includes(q)
+                      )
+                    : seds;
+                  const sorted = [...filtered].sort((a, b) => {
+                    const da = a.date ?? a.created_at ?? "";
+                    const db = b.date ?? b.created_at ?? "";
+                    return db.localeCompare(da);
                   });
+                  if (sorted.length === 0) {
+                    return (
+                      <p style={{ fontSize: 12, color: "var(--muted-light)", padding: "6px 8px", margin: 0 }}>
+                        No SEDs found.
+                      </p>
+                    );
+                  }
+                  return (
+                    <div>
+                      {sorted.map((s) => {
+                        const active = s.id === activeSedId;
+                        const dateStr = (s.date ?? s.created_at ?? "").slice(0, 10) || "—";
+                        return (
+                          <a
+                            key={s.id}
+                            href={`/sed/${s.id}`}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 6,
+                              padding: "5px 8px", fontSize: 12,
+                              color: active ? "var(--foreground)" : "var(--muted)",
+                              fontWeight: active ? 600 : 400,
+                              background: active ? "var(--card-hover-bg)" : "none",
+                              textDecoration: "none", borderRadius: 5,
+                              borderLeft: active ? "2px solid var(--foreground)" : "2px solid transparent",
+                              marginLeft: -2,
+                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                            }}
+                            onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "var(--card-hover-bg)"; e.currentTarget.style.color = "var(--foreground)"; } }}
+                            onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--muted)"; } }}
+                          >
+                            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {`${s.ticket_number} — ${s.project_title}`.slice(0, 40)}
+                            </span>
+                            <span style={{ fontSize: 10, color: "var(--muted-light)", flexShrink: 0 }}>
+                              {dateStr}
+                            </span>
+                          </a>
+                        );
+                      })}
+                    </div>
+                  );
                 })()}
-              </>
+              </div>
             )}
           </>
         )}
