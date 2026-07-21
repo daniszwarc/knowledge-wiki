@@ -13,13 +13,11 @@ interface Workflow {
   department: string;
   description: string;
   completeness_score: number;
+  created_at: string;
+  updated_at: string;
   rule_count: string;
   validated_count: string;
   gap_count: string;
-}
-
-interface GroupedWorkflows {
-  [department: string]: Workflow[];
 }
 
 const DEPT_ICONS: Record<string, string> = {
@@ -35,15 +33,14 @@ function completenessLevel(score: number): "high" | "medium" | "low" {
 }
 
 export default function HomePage() {
-  const [grouped, setGrouped] = useState<GroupedWorkflows>({});
-  const [departments, setDepartments] = useState<string[]>([]);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [workflowSearch, setWorkflowSearch] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [chatQuestion, setChatQuestion] = useState("");
   const [chatResponse, setChatResponse] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatSlow, setChatSlow] = useState(false);
   const chatSlowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const [confirmingDeleteWorkflow, setConfirmingDeleteWorkflow] = useState<string | null>(null);
   const [me, setMe] = useState<{ id: string; email: string; role: string } | null>(null);
 
@@ -54,18 +51,9 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/workflows").then((r) => r.json()),
-      fetch("/api/departments").then((r) => r.json()),
-    ]).then(([workflows, allDepts]: [Workflow[], string[]]) => {
-      const g: GroupedWorkflows = {};
-      for (const w of workflows) {
-        if (!g[w.department]) g[w.department] = [];
-        g[w.department].push(w);
-      }
-      setGrouped(g);
-      setDepartments(Array.isArray(allDepts) ? allDepts : Object.keys(g).sort());
-    });
+    fetch("/api/workflows")
+      .then((r) => r.json())
+      .then((data: Workflow[]) => setWorkflows(data));
   }, []);
 
   function extractSearchQuery(input: string): string {
@@ -143,13 +131,7 @@ export default function HomePage() {
   async function handleDeleteWorkflow(workflowId: string) {
     await fetch(`/api/workflows/${workflowId}`, { method: "DELETE" });
     setConfirmingDeleteWorkflow(null);
-    setGrouped((prev) => {
-      const next: GroupedWorkflows = {};
-      for (const dept of Object.keys(prev)) {
-        next[dept] = prev[dept].filter((w) => w.id !== workflowId);
-      }
-      return next;
-    });
+    setWorkflows((prev) => prev.filter((w) => w.id !== workflowId));
   }
 
   return (
@@ -279,112 +261,151 @@ export default function HomePage() {
             )}
           </div>
 
-          {/* Workflow sections by department */}
-          {departments.map((dept) => (
-            <section
-              key={dept}
-              ref={(el) => { sectionRefs.current[dept] = el; }}
-              style={{ marginBottom: 48 }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-                <span style={{ fontSize: 18, opacity: 0.5 }}>{DEPT_ICONS[dept] ?? "◈"}</span>
-                <h2 style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: "0.1em",
-                  textTransform: "uppercase",
-                  color: "var(--muted)",
-                  whiteSpace: "nowrap",
-                }}>
-                  {dept}
-                </h2>
-                <hr style={{ flex: 1, border: "none", borderTop: "1px solid var(--card-border)", margin: 0 }} />
-              </div>
+          {/* Business rules — flat, chronological, searchable */}
+          <section style={{ marginBottom: 48 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <h2 style={{
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: "var(--muted)",
+                whiteSpace: "nowrap",
+              }}>
+                Business Rules
+              </h2>
+              <hr style={{ flex: 1, border: "none", borderTop: "1px solid var(--card-border)", margin: 0 }} />
+            </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
-                {grouped[dept]?.map((w) => {
-                  const level = completenessLevel(w.completeness_score);
-                  const ruleCount = parseInt(w.rule_count, 10);
-                  const validatedCount = parseInt(w.validated_count, 10);
-                  const gapCount = parseInt(w.gap_count, 10);
-                  const isConfirming = confirmingDeleteWorkflow === w.id;
-                  const canDelete = me && ["editor", "admin"].includes(me.role) && ruleCount === 0;
+            <input
+              type="text"
+              value={workflowSearch}
+              onChange={(e) => setWorkflowSearch(e.target.value)}
+              placeholder="Search business rules…"
+              style={{
+                width: "100%", boxSizing: "border-box",
+                fontSize: 13, padding: "9px 14px", borderRadius: 8,
+                border: "1px solid var(--card-border)",
+                background: "var(--sidebar-bg)", color: "var(--foreground)",
+                outline: "none", marginBottom: 20,
+              }}
+            />
 
-                  return (
-                    <div key={w.id} style={{ position: "relative" }}>
-                      <a
-                        href={`/workflow/${w.id}`}
-                        className="workflow-card"
-                        style={{ display: "block", padding: 20, borderRadius: 12, textDecoration: "none", color: "inherit" }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                          <span style={{
-                            fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99,
-                            border: "1px solid var(--card-border)", color: "var(--muted)", background: "var(--sidebar-bg)",
-                          }}>
-                            {dept}
-                          </span>
-                          <span className={`badge-${level}`} style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99 }}>
-                            {w.completeness_score}% complete
-                          </span>
-                        </div>
-                        <h3 style={{ fontSize: 14, fontWeight: 500, color: "var(--foreground)", marginBottom: 6, lineHeight: 1.4 }}>
-                          How does {w.name.toLowerCase()} work?
-                        </h3>
-                        <p style={{
-                          fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 16,
-                          display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
-                        }}>
-                          {w.description}
-                        </p>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "var(--muted-light)" }}>
-                          <span>{ruleCount} rule{ruleCount !== 1 ? "s" : ""}</span>
-                          <span>·</span>
-                          <span>{validatedCount}/{ruleCount} validated</span>
-                          {gapCount > 0 && (
-                            <>
-                              <span>·</span>
-                              <span style={{ color: "#d97706" }}>{gapCount} gap{gapCount !== 1 ? "s" : ""}</span>
-                            </>
-                          )}
-                        </div>
-                      </a>
+            {(() => {
+              const q = workflowSearch.trim().toLowerCase();
+              const filtered = q
+                ? workflows.filter((w) => w.name.toLowerCase().includes(q))
+                : workflows;
+              const sorted = [...filtered].sort((a, b) => {
+                const da = a.created_at ?? "";
+                const db = b.created_at ?? "";
+                return db.localeCompare(da);
+              });
 
-                      {canDelete && (
-                        <div style={{ position: "absolute", top: 12, right: 12 }} onClick={(e) => e.stopPropagation()}>
-                          {isConfirming ? (
-                            <div style={{ display: "flex", alignItems: "center", gap: 5, background: "var(--card-bg)", borderRadius: 8, border: "1px solid var(--card-border)", padding: "5px 8px" }}>
-                              <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>Delete?</span>
-                              <button
-                                onClick={() => handleDeleteWorkflow(w.id)}
-                                style={{ fontSize: 11, padding: "2px 8px", borderRadius: 5, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", cursor: "pointer", fontWeight: 500, whiteSpace: "nowrap" }}
-                              >
-                                Yes
-                              </button>
-                              <button
-                                onClick={() => setConfirmingDeleteWorkflow(null)}
-                                style={{ fontSize: 11, padding: "2px 6px", borderRadius: 5, border: "1px solid var(--card-border)", background: "none", color: "var(--muted)", cursor: "pointer" }}
-                              >
-                                No
-                              </button>
+              if (sorted.length === 0) {
+                return (
+                  <p style={{ fontSize: 13, color: "var(--muted-light)" }}>
+                    No business rules found.
+                  </p>
+                );
+              }
+
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
+                  {sorted.map((w) => {
+                    const level = completenessLevel(w.completeness_score);
+                    const ruleCount = parseInt(w.rule_count, 10);
+                    const validatedCount = parseInt(w.validated_count, 10);
+                    const gapCount = parseInt(w.gap_count, 10);
+                    const isConfirming = confirmingDeleteWorkflow === w.id;
+                    const canDelete = me && ["editor", "admin"].includes(me.role) && ruleCount === 0;
+                    const dateStr = (w.created_at ?? "").slice(0, 10);
+
+                    return (
+                      <div key={w.id} style={{ position: "relative" }}>
+                        <a
+                          href={`/workflow/${w.id}`}
+                          className="workflow-card"
+                          style={{ display: "block", padding: 20, borderRadius: 12, textDecoration: "none", color: "inherit" }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 8 }}>
+                            <span style={{
+                              fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99,
+                              border: "1px solid var(--card-border)", color: "var(--muted)", background: "var(--sidebar-bg)",
+                              display: "flex", alignItems: "center", gap: 5,
+                            }}>
+                              <span style={{ opacity: 0.6 }}>{DEPT_ICONS[w.department] ?? "◈"}</span>
+                              {w.department}
+                            </span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              {dateStr && (
+                                <span style={{ fontSize: 11, color: "var(--muted-light)", whiteSpace: "nowrap" }}>
+                                  {dateStr}
+                                </span>
+                              )}
+                              <span className={`badge-${level}`} style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 99 }}>
+                                {w.completeness_score}% complete
+                              </span>
                             </div>
-                          ) : (
-                            <button
-                              onClick={() => setConfirmingDeleteWorkflow(w.id)}
-                              title="Delete workflow"
-                              style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", cursor: "pointer", opacity: 0.7 }}
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+                          </div>
+                          <h3 style={{ fontSize: 14, fontWeight: 500, color: "var(--foreground)", marginBottom: 6, lineHeight: 1.4 }}>
+                            How does {w.name.toLowerCase()} work?
+                          </h3>
+                          <p style={{
+                            fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 16,
+                            display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+                          }}>
+                            {w.description}
+                          </p>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11, color: "var(--muted-light)" }}>
+                            <span>{ruleCount} rule{ruleCount !== 1 ? "s" : ""}</span>
+                            <span>·</span>
+                            <span>{validatedCount}/{ruleCount} validated</span>
+                            {gapCount > 0 && (
+                              <>
+                                <span>·</span>
+                                <span style={{ color: "#d97706" }}>{gapCount} gap{gapCount !== 1 ? "s" : ""}</span>
+                              </>
+                            )}
+                          </div>
+                        </a>
+
+                        {canDelete && (
+                          <div style={{ position: "absolute", top: 12, right: 12 }} onClick={(e) => e.stopPropagation()}>
+                            {isConfirming ? (
+                              <div style={{ display: "flex", alignItems: "center", gap: 5, background: "var(--card-bg)", borderRadius: 8, border: "1px solid var(--card-border)", padding: "5px 8px" }}>
+                                <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>Delete?</span>
+                                <button
+                                  onClick={() => handleDeleteWorkflow(w.id)}
+                                  style={{ fontSize: 11, padding: "2px 8px", borderRadius: 5, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", cursor: "pointer", fontWeight: 500, whiteSpace: "nowrap" }}
+                                >
+                                  Yes
+                                </button>
+                                <button
+                                  onClick={() => setConfirmingDeleteWorkflow(null)}
+                                  style={{ fontSize: 11, padding: "2px 6px", borderRadius: 5, border: "1px solid var(--card-border)", background: "none", color: "var(--muted)", cursor: "pointer" }}
+                                >
+                                  No
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmingDeleteWorkflow(w.id)}
+                                title="Delete workflow"
+                                style={{ fontSize: 11, padding: "2px 8px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", cursor: "pointer", opacity: 0.7 }}
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </section>
         </div>
       </main>
     </div>
