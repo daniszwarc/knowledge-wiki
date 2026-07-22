@@ -228,6 +228,9 @@ export default function VideoPage() {
                   allowFullScreen
                   style={{ display: "block", borderRadius: 8, border: "none" }}
                 />
+                <p style={{ fontSize: 12, color: "var(--muted-foreground, #8A8F98)", marginTop: 6, marginBottom: 0 }}>
+                  If the video does not load, make sure you are logged into your Microsoft account in another browser tab, then refresh this page.
+                </p>
               </div>
 
               {/* Step-by-step guide heading + controls */}
