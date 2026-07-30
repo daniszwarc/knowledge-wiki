@@ -24,6 +24,9 @@ interface SFileItem {
   file: File;
   status: SFileStatus;
   error?: string;
+  sedId?: string;
+  ticketNumber?: string;
+  projectTitle?: string;
 }
 
 type UploadResult =
@@ -218,9 +221,11 @@ export default function UploadPage() {
             appendCompanyFields(sfd, sCompany);
             const res = await fetch("/api/upload/sed", { method: "POST", body: sfd });
             if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
-            await res.json();
+            const json = await res.json();
             succeeded++;
-            setSFiles((prev) => prev.map((f) => (f.id === item.id ? { ...f, status: "success" } : f)));
+            setSFiles((prev) => prev.map((f) => (f.id === item.id
+              ? { ...f, status: "success", sedId: json.sed_id, ticketNumber: json.ticket_number, projectTitle: json.project_title }
+              : f)));
           } catch (err) {
             failed++;
             const message = err instanceof Error ? err.message : "Upload failed";
@@ -589,6 +594,9 @@ export default function UploadPage() {
                           </div>
                           {f.status === "error" && f.error && (
                             <span style={{ fontSize: 11, color: "#b91c1c" }}>{f.error}</span>
+                          )}
+                          {f.status === "success" && f.ticketNumber && f.projectTitle && (
+                            <span style={{ fontSize: 11, color: "var(--muted)" }}>{f.ticketNumber} — {f.projectTitle}</span>
                           )}
                         </div>
                       ))}
