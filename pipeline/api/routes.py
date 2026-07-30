@@ -570,10 +570,72 @@ def extract_sed_data(data: bytes, job_id: Optional[str] = None, upload_dir: Opti
         "enter the user - business requirements here",
     ]
 
+    TITLE_BOILERPLATE = [
+        "living document",
+        "functional design",
+        "confidential",
+        "internal use",
+        "api group",
+    ]
+
+    TITLE_BOILERPLATE_PATTERNS = [
+        _re.compile(r"page\s*\d"),
+    ]
+
+    def _is_title_candidate(text_clean: str, text_lower: str) -> bool:
+        if len(text_clean) < 8:
+            return False
+        if any(kw in text_lower for kw in TITLE_BOILERPLATE):
+            return False
+        if any(p.search(text_lower) for p in TITLE_BOILERPLATE_PATTERNS):
+            return False
+        return True
+
     paragraphs = doc.paragraphs
+
+    # Pass 1: prefer "Title", "Heading 1", or "Heading 2" styled paragraphs for
+    # project_title, in that priority order, before falling back to "Normal".
+    project_title = None
+    for preferred_style in ("title", "heading 1", "heading 2"):
+        for para in paragraphs:
+            text = para.text.strip()
+            if not text:
+                continue
+            text_clean = _re.sub(r'[\t\xa0]+', ' ', text).strip()
+            text_lower = text_clean.lower()
+            if para.style.name.lower() != preferred_style:
+                continue
+            if any(skip in text_lower for skip in SKIP_HEADINGS):
+                continue
+            if any(section_key in text_lower for section_key in SECTION_MAP):
+                continue
+            if not _is_title_candidate(text_clean, text_lower):
+                continue
+            project_title = text_clean
+            break
+        if project_title:
+            break
+
+    # Fallback: first "Normal" styled paragraph that isn't known boilerplate.
+    if not project_title:
+        for para in paragraphs:
+            text = para.text.strip()
+            if not text:
+                continue
+            text_clean = _re.sub(r'[\t\xa0]+', ' ', text).strip()
+            text_lower = text_clean.lower()
+            if para.style.name.lower() != "normal":
+                continue
+            if not _is_title_candidate(text_clean, text_lower):
+                continue
+            project_title = text_clean
+            break
+
+    result["project_title"] = project_title
+    print(f"[extract_sed_data] project_title: {project_title!r}")
+
     current_section = None
     in_content_zone = False
-    title_found = False
     section_content: dict = {k: [] for k in ["business_requirements", "it_design", "unit_testing", "acceptance_testing"]}
     img_counter = 1
 
@@ -613,12 +675,6 @@ def extract_sed_data(data: bytes, job_id: Optional[str] = None, upload_dir: Opti
         text_clean = _re.sub(r'[\t\xa0]+', ' ', text).strip()
         text_lower = text_clean.lower()
         style = para.style.name.lower()
-
-        if not title_found and style == "normal" and len(text_clean) > 3:
-            if not any(kw in text_lower for kw in ["living document", "functional design"]):
-                result["project_title"] = text_clean
-                title_found = True
-                continue
 
         if ":" in text_clean and style == "normal":
             parts = _re.split(r':\s*', text_clean, maxsplit=1)
