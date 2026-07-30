@@ -660,6 +660,11 @@ export function Sidebar({
             Admin
           </a>
         )}
+        {me?.role === "admin" && (
+          <a href="/admin/seds" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
+            SED management
+          </a>
+        )}
         {(me?.role === "admin" || me?.role === "developer") && (
           <a href="/audit" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
             Audit Log
