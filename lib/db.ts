@@ -128,3 +128,11 @@ export async function getUserCompanyIds(userId: string): Promise<string[]> {
   );
   return rows.map((r) => r.company_id);
 }
+
+export async function getUserPlatformIds(userId: string): Promise<string[]> {
+  const rows = await query<{ platform_id: string }>(
+    `SELECT platform_id FROM user_platforms WHERE user_id = $1`,
+    [userId]
+  );
+  return rows.map((r) => r.platform_id);
+}

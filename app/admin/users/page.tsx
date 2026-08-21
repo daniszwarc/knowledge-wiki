@@ -18,6 +18,12 @@ interface Company {
   company_number: number | null;
 }
 
+interface Platform {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 const ROLES = ["viewer", "validator", "editor", "admin", "developer", "super_admin", "company_admin"];
 const RESTRICTED_ROLES = ["admin", "super_admin", "developer"];
 
@@ -174,6 +180,156 @@ function CompanyMultiSelect({
   );
 }
 
+function PlatformMultiSelect({
+  platforms,
+  selected,
+  onChange,
+}: {
+  platforms: Platform[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
+
+  const selectedPlatforms = platforms.filter((p) => selected.includes(p.id));
+  const unselectedFiltered = platforms
+    .filter((p) => !selected.includes(p.id))
+    .filter((p) => p.name.toLowerCase().includes(query.toLowerCase()));
+
+  function remove(id: string) {
+    onChange(selected.filter((s) => s !== id));
+  }
+
+  function toggle(id: string) {
+    onChange(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id]);
+  }
+
+  function selectAll() {
+    onChange([...selected, ...unselectedFiltered.map((p) => p.id)]);
+  }
+
+  function clearAll() {
+    onChange([]);
+  }
+
+  return (
+    <div ref={wrapperRef} style={{ position: "relative" }}>
+      {selectedPlatforms.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 6 }}>
+          {selectedPlatforms.map((p) => (
+            <span
+              key={p.id}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 4,
+                padding: "2px 7px 2px 8px",
+                background: "var(--sidebar-bg)",
+                border: "0.5px solid var(--card-border)",
+                borderRadius: 99,
+                fontSize: 12,
+                color: "var(--foreground)",
+              }}
+            >
+              {p.name}
+              <button
+                type="button"
+                onClick={() => remove(p.id)}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  padding: "0 0 0 2px", fontSize: 14, lineHeight: 1,
+                  color: "var(--muted)", display: "flex", alignItems: "center",
+                }}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <input
+        className="search-input"
+        type="text"
+        value={query}
+        placeholder="Search and select platforms..."
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        style={{ width: "100%", padding: "7px 10px", fontSize: 13, borderRadius: 6, boxSizing: "border-box" }}
+      />
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "100%", left: 0, right: 0,
+          marginTop: 4, minWidth: "400px",
+          background: "var(--background)", border: "0.5px solid var(--card-border)",
+          borderRadius: "var(--border-radius-md)", zIndex: 1000,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+        }}>
+          <div style={{
+            display: "flex", gap: 12, padding: "6px 12px",
+            borderBottom: "1px solid var(--card-border)",
+          }}>
+            <button
+              type="button"
+              onClick={selectAll}
+              style={{ fontSize: 11, color: "var(--muted)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+            >
+              Select all
+            </button>
+            <button
+              type="button"
+              onClick={clearAll}
+              style={{ fontSize: 11, color: "var(--muted)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+            >
+              Clear all
+            </button>
+          </div>
+
+          <div style={{ maxHeight: "320px", overflowY: "auto" }}>
+            {unselectedFiltered.length === 0 ? (
+              <div style={{ padding: "10px 12px", fontSize: 12, color: "var(--muted)" }}>
+                {query ? "No matches" : "All platforms selected"}
+              </div>
+            ) : (
+              unselectedFiltered.map((p) => (
+                <label
+                  key={p.id}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--sidebar-bg)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "6px 12px", fontSize: 13, color: "var(--foreground)",
+                    cursor: "pointer", background: "transparent",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    onChange={() => toggle(p.id)}
+                    style={{ accentColor: "var(--foreground)", flexShrink: 0 }}
+                  />
+                  {p.name}
+                </label>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -185,21 +341,28 @@ export default function AdminUsersPage() {
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState("viewer");
   const [newCompanies, setNewCompanies] = useState<string[]>([]);
+  const [newPlatforms, setNewPlatforms] = useState<string[]>([]);
   const [addError, setAddError] = useState("");
   const [addLoading, setAddLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [platforms, setPlatforms] = useState<Platform[]>([]);
 
   const [editCompaniesUserId, setEditCompaniesUserId] = useState<string | null>(null);
   const [editCompaniesSelected, setEditCompaniesSelected] = useState<string[]>([]);
   const [editCompaniesSaving, setEditCompaniesSaving] = useState(false);
+
+  const [editPlatformsUserId, setEditPlatformsUserId] = useState<string | null>(null);
+  const [editPlatformsSelected, setEditPlatformsSelected] = useState<string[]>([]);
+  const [editPlatformsSaving, setEditPlatformsSaving] = useState(false);
 
   useEffect(() => {
     Promise.all([
       fetch("/api/admin/users").then((r) => r.json()),
       fetch("/api/auth/me").then((r) => r.json()),
       fetch("/api/companies").then((r) => r.ok ? r.json() : []),
-    ]).then(([userList, me, allCompanies]) => {
+      fetch("/api/admin/platforms").then((r) => r.ok ? r.json() : []),
+    ]).then(([userList, me, allCompanies, allPlatforms]) => {
       setUsers(userList);
       setSelfId(me.id);
       setSelfRole(me.role ?? "");
@@ -208,6 +371,7 @@ export default function AdminUsersPage() {
         .filter((c) => c.id !== "all" && c.company_number != null)
         .sort((a, b) => (a.company_number ?? 0) - (b.company_number ?? 0));
       setCompanies(sorted);
+      setPlatforms(allPlatforms as Platform[]);
       setLoading(false);
     });
   }, []);
@@ -220,14 +384,14 @@ export default function AdminUsersPage() {
       const res = await fetch("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: newEmail, password: newPassword, role: newRole, companies: newCompanies }),
+        body: JSON.stringify({ email: newEmail, password: newPassword, role: newRole, companies: newCompanies, platforms: newPlatforms }),
       });
       const data = await res.json();
       if (!res.ok) { setAddError(data.error ?? "Failed"); return; }
       const updated = await fetch("/api/admin/users").then((r) => r.json());
       setUsers(updated);
       setShowAdd(false);
-      setNewEmail(""); setNewPassword(""); setNewRole("viewer"); setNewCompanies([]);
+      setNewEmail(""); setNewPassword(""); setNewRole("viewer"); setNewCompanies([]); setNewPlatforms([]);
     } finally {
       setAddLoading(false);
     }
@@ -279,6 +443,28 @@ export default function AdminUsersPage() {
     setEditCompaniesUserId(null);
   }
 
+  async function openPlatformEditor(userId: string) {
+    if (editPlatformsUserId === userId) {
+      setEditPlatformsUserId(null);
+      return;
+    }
+    const assigned = await fetch(`/api/admin/users/${userId}/platforms`).then((r) => r.ok ? r.json() : []);
+    setEditPlatformsSelected(assigned);
+    setEditPlatformsUserId(userId);
+  }
+
+  async function savePlatforms() {
+    if (!editPlatformsUserId) return;
+    setEditPlatformsSaving(true);
+    await fetch(`/api/admin/users/${editPlatformsUserId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ platforms: editPlatformsSelected }),
+    });
+    setEditPlatformsSaving(false);
+    setEditPlatformsUserId(null);
+  }
+
   function fmt(d: string | null) {
     if (!d) return "—";
     return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -292,6 +478,8 @@ export default function AdminUsersPage() {
         <a href="/" style={{ fontSize: 12, color: "var(--muted)", textDecoration: "none" }}>← Home</a>
         <span style={{ color: "var(--muted-light)", opacity: 0.4 }}>·</span>
         <span style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)" }}>User management</span>
+        <span style={{ color: "var(--muted-light)", opacity: 0.4 }}>·</span>
+        <a href="/admin/platforms" style={{ fontSize: 12, color: "var(--muted)", textDecoration: "none" }}>Platforms</a>
         <button
           onClick={() => setShowAdd((p) => !p)}
           style={{
@@ -333,7 +521,7 @@ export default function AdminUsersPage() {
             </div>
 
             {companies.length > 0 && (
-              <div>
+              <div style={{ marginBottom: platforms.length > 0 ? 16 : 0 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
                   Company access
                 </div>
@@ -341,6 +529,19 @@ export default function AdminUsersPage() {
                   companies={selfRole === "company_admin" ? companies.filter((c) => selfCompanyIds.includes(c.id)) : companies}
                   selected={newCompanies}
                   onChange={setNewCompanies}
+                />
+              </div>
+            )}
+
+            {platforms.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                  Platform access
+                </div>
+                <PlatformMultiSelect
+                  platforms={platforms}
+                  selected={newPlatforms}
+                  onChange={setNewPlatforms}
                 />
               </div>
             )}
@@ -369,7 +570,7 @@ export default function AdminUsersPage() {
                   style={{
                     display: "grid", gridTemplateColumns: "1fr 100px 80px 120px 160px",
                     padding: "12px 16px", alignItems: "center",
-                    borderBottom: idx < users.length - 1 || editCompaniesUserId === user.id ? "1px solid var(--card-border)" : "none",
+                    borderBottom: idx < users.length - 1 || editCompaniesUserId === user.id || editPlatformsUserId === user.id ? "1px solid var(--card-border)" : "none",
                     background: "var(--card-bg)",
                   }}
                 >
@@ -412,6 +613,18 @@ export default function AdminUsersPage() {
                     >
                       Companies
                     </button>
+                    <button
+                      onClick={() => openPlatformEditor(user.id)}
+                      style={{
+                        fontSize: 11, padding: "2px 8px", borderRadius: 5,
+                        border: `1px solid ${editPlatformsUserId === user.id ? "var(--foreground)" : "var(--card-border)"}`,
+                        background: editPlatformsUserId === user.id ? "var(--foreground)" : "none",
+                        color: editPlatformsUserId === user.id ? "var(--background)" : "var(--muted)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Platforms
+                    </button>
                     {(user.totp_enabled || user.two_fa_method === 'email') && (
                       <button
                         onClick={() => handleReset2FA(user.id)}
@@ -437,7 +650,7 @@ export default function AdminUsersPage() {
                 {editCompaniesUserId === user.id && (
                   <div style={{
                     padding: "16px 20px", background: "var(--sidebar-bg)",
-                    borderBottom: idx < users.length - 1 ? "1px solid var(--card-border)" : "none",
+                    borderBottom: idx < users.length - 1 || editPlatformsUserId === user.id ? "1px solid var(--card-border)" : "none",
                   }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
                       Company access for {user.email}
@@ -463,6 +676,44 @@ export default function AdminUsersPage() {
                       </button>
                       <button
                         onClick={() => setEditCompaniesUserId(null)}
+                        style={{ fontSize: 12, padding: "5px 12px", borderRadius: 6, border: "1px solid var(--card-border)", background: "none", color: "var(--muted)", cursor: "pointer" }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Platform editor panel */}
+                {editPlatformsUserId === user.id && (
+                  <div style={{
+                    padding: "16px 20px", background: "var(--sidebar-bg)",
+                    borderBottom: idx < users.length - 1 ? "1px solid var(--card-border)" : "none",
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+                      Platform access for {user.email}
+                    </div>
+                    {platforms.length === 0 ? (
+                      <p style={{ fontSize: 12, color: "var(--muted-light)", margin: "0 0 12px" }}>No platforms configured.</p>
+                    ) : (
+                      <div style={{ marginBottom: 14 }}>
+                        <PlatformMultiSelect
+                          platforms={platforms}
+                          selected={editPlatformsSelected}
+                          onChange={setEditPlatformsSelected}
+                        />
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        onClick={savePlatforms}
+                        disabled={editPlatformsSaving}
+                        style={{ fontSize: 12, padding: "5px 14px", borderRadius: 6, border: "none", background: "var(--foreground)", color: "var(--background)", cursor: "pointer", fontWeight: 500 }}
+                      >
+                        {editPlatformsSaving ? "Saving…" : "Save"}
+                      </button>
+                      <button
+                        onClick={() => setEditPlatformsUserId(null)}
                         style={{ fontSize: 12, padding: "5px 12px", borderRadius: 6, border: "1px solid var(--card-border)", background: "none", color: "var(--muted)", cursor: "pointer" }}
                       >
                         Cancel

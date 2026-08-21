@@ -51,34 +51,17 @@ interface Me {
   role: string;
 }
 
-type Section = "businessRules" | "referenceArticles" | "seds" | "videoGuides";
-type SubSection = "howToGuides" | "trainingMaterial";
+interface Platform {
+  id: string;
+  name: string;
+  slug: string;
+}
 
-function detectActive(
-  nav: SidebarNavData,
-  activeWorkflowId?: string,
-  activeArticleId?: string
-): { section: Section | null; dept: string | null; subSection: SubSection | null } {
-  if (activeWorkflowId) {
-    for (const d of nav.businessRules) {
-      if (d.workflows.some((w) => w.id === activeWorkflowId)) {
-        return { section: "businessRules", dept: `businessRules:${d.department}`, subSection: null };
-      }
-    }
-  }
-  if (activeArticleId) {
-    for (const d of nav.howToGuides) {
-      if (d.articles.some((a) => a.id === activeArticleId)) {
-        return { section: "referenceArticles", dept: `howToGuides:${d.department}`, subSection: "howToGuides" };
-      }
-    }
-    for (const d of nav.trainingMaterial) {
-      if (d.articles.some((a) => a.id === activeArticleId)) {
-        return { section: "referenceArticles", dept: `trainingMaterial:${d.department}`, subSection: "trainingMaterial" };
-      }
-    }
-  }
-  return { section: null, dept: null, subSection: null };
+interface Category {
+  id: string;
+  platform_id: string;
+  name: string;
+  processing_type: "rules" | "article" | "sed" | "video" | string;
 }
 
 function ChevronIcon({ rotated }: { rotated: boolean }) {
@@ -99,57 +82,58 @@ function ChevronIcon({ rotated }: { rotated: boolean }) {
   );
 }
 
-function SectionHeader({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) {
-  return (
-    <button
-      onClick={onToggle}
-      style={{
-        width: "100%", display: "flex", alignItems: "center", gap: 8,
-        padding: "9px 16px 8px",
-        background: "none", border: "none", cursor: "pointer",
-        fontSize: 12, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase",
-        color: "var(--foreground)",
-      }}
-    >
-      <span style={{ flex: 1, textAlign: "left" }}>{label}</span>
-      <ChevronIcon rotated={open} />
-    </button>
-  );
-}
+const DEPTH_STYLE: Record<number, { paddingLeft: number; fontSize: number; fontWeight: number; color: string }> = {
+  0: { paddingLeft: 16, fontSize: 12, fontWeight: 700, color: "var(--foreground)" },
+  1: { paddingLeft: 24, fontSize: 11, fontWeight: 600, color: "var(--muted)" },
+  2: { paddingLeft: 36, fontSize: 10, fontWeight: 600, color: "var(--muted)" },
+  3: { paddingLeft: 44, fontSize: 10, fontWeight: 600, color: "var(--muted)" },
+};
 
-function SubSectionHeader({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) {
-  return (
-    <button
-      onClick={onToggle}
-      style={{
-        width: "100%", display: "flex", alignItems: "center", gap: 6,
-        padding: "5px 16px 5px 24px",
-        background: "none", border: "none", cursor: "pointer",
-        fontSize: 11, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase",
-        color: "var(--muted)",
-      }}
-    >
-      <span style={{ flex: 1, textAlign: "left" }}>{label}</span>
-      <ChevronIcon rotated={open} />
-    </button>
-  );
-}
-
-function DeptHeader({ label, badge, open, onToggle }: {
-  label: string; badge?: string; open: boolean; onToggle: () => void;
+function NavHeader({ label, depth, badge, open, onToggle, href }: {
+  label: string; depth: number; badge?: string; open: boolean; onToggle: () => void; href?: string;
 }) {
+  const s = DEPTH_STYLE[depth] ?? DEPTH_STYLE[3];
+  const textStyle: React.CSSProperties = {
+    flex: 1, textAlign: "left",
+    textTransform: depth === 0 || depth === 1 ? "uppercase" : "uppercase",
+    letterSpacing: depth === 0 ? "0.07em" : "0.05em",
+  };
+
+  if (href) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", width: "100%" }}>
+        <a
+          href={href}
+          style={{
+            ...textStyle,
+            padding: `9px 0 8px ${s.paddingLeft}px`,
+            fontSize: s.fontSize, fontWeight: s.fontWeight, color: s.color, textDecoration: "none",
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {label}
+        </a>
+        <button
+          onClick={onToggle}
+          style={{ background: "none", border: "none", cursor: "pointer", padding: "9px 16px 8px 8px", display: "flex", alignItems: "center" }}
+        >
+          <ChevronIcon rotated={open} />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <button
       onClick={onToggle}
       style={{
         width: "100%", display: "flex", alignItems: "center", gap: 6,
-        padding: "5px 16px 5px 28px",
+        padding: `5px 16px 5px ${s.paddingLeft}px`,
         background: "none", border: "none", cursor: "pointer",
-        fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase",
-        color: "var(--muted)",
+        fontSize: s.fontSize, fontWeight: s.fontWeight, color: s.color,
       }}
     >
-      <span style={{ flex: 1, textAlign: "left" }}>{label}</span>
+      <span style={textStyle}>{label}</span>
       {badge !== undefined && (
         <span style={{ fontSize: 10, fontWeight: 400, color: "var(--muted-light)", marginRight: 2 }}>{badge}</span>
       )}
@@ -158,33 +142,10 @@ function DeptHeader({ label, badge, open, onToggle }: {
   );
 }
 
-function SubDeptHeader({ label, badge, open, onToggle }: {
-  label: string; badge?: string; open: boolean; onToggle: () => void;
-}) {
-  return (
-    <button
-      onClick={onToggle}
-      style={{
-        width: "100%", display: "flex", alignItems: "center", gap: 6,
-        padding: "5px 16px 5px 36px",
-        background: "none", border: "none", cursor: "pointer",
-        fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase",
-        color: "var(--muted)",
-      }}
-    >
-      <span style={{ flex: 1, textAlign: "left" }}>{label}</span>
-      {badge !== undefined && (
-        <span style={{ fontSize: 10, fontWeight: 400, color: "var(--muted-light)", marginRight: 2 }}>{badge}</span>
-      )}
-      <ChevronIcon rotated={open} />
-    </button>
-  );
-}
-
-function ArticleLink({ article, active }: { article: NavArticle; active: boolean }) {
+function ItemLink({ href, label, active, dot }: { href: string; label: string; active: boolean; dot?: string }) {
   return (
     <a
-      href={`/article/${article.id}`}
+      href={href}
       style={{
         display: "flex", alignItems: "center", gap: 6,
         padding: "5px 8px", fontSize: 12,
@@ -194,20 +155,25 @@ function ArticleLink({ article, active }: { article: NavArticle; active: boolean
         textDecoration: "none", borderRadius: 5,
         borderLeft: active ? "2px solid var(--foreground)" : "2px solid transparent",
         marginLeft: -2,
-        whiteSpace: "nowrap",
+        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
       }}
       onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "var(--card-hover-bg)"; e.currentTarget.style.color = "var(--foreground)"; } }}
       onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--muted)"; } }}
     >
-      <span style={{
-        width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-        background: article.stakeholder_validated ? "#4ade80" : "#f59e0b",
-        opacity: article.stakeholder_validated ? 0.8 : 0.5,
-      }} />
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {article.title}
-      </span>
+      {dot && (
+        <span style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, background: dot, opacity: 0.8 }} />
+      )}
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
     </a>
+  );
+}
+
+function ItemGroup({ depth, children }: { depth: number; children: React.ReactNode }) {
+  const marginLeft = (DEPTH_STYLE[depth]?.paddingLeft ?? 36) - 8;
+  return (
+    <div style={{ marginLeft, paddingLeft: 10, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
+      {children}
+    </div>
   );
 }
 
@@ -230,105 +196,310 @@ export function Sidebar({
   me?: Me | null;
   refreshKey?: number;
 }) {
+  const [platforms, setPlatforms] = useState<Platform[] | null>(null);
+  const [categoriesByPlatform, setCategoriesByPlatform] = useState<Record<string, Category[]>>({});
   const [nav, setNav] = useState<SidebarNavData | null>(null);
   const [seds, setSeds] = useState<NavSed[]>([]);
   const [videos, setVideos] = useState<NavVideo[]>([]);
-  const [openSections, setOpenSections] = useState<Record<Section, boolean>>({
-    businessRules: false,
-    referenceArticles: false,
-    seds: false,
-    videoGuides: false,
-  });
-  const [openSubSections, setOpenSubSections] = useState<Record<SubSection, boolean>>({
-    howToGuides: false,
-    trainingMaterial: false,
-  });
+
+  const [openPlatforms, setOpenPlatforms] = useState<Record<string, boolean>>({});
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
+  const [openSubSections, setOpenSubSections] = useState<Record<string, boolean>>({});
   const [openDepts, setOpenDepts] = useState<Record<string, boolean>>({});
   const [sedSearch, setSedSearch] = useState("");
   const initialized = useRef(false);
 
+  const sedCategoryOpen = Object.entries(openCategories).some(
+    ([id, open]) => open && Object.values(categoriesByPlatform).flat().find((c) => c.id === id)?.processing_type === "sed"
+  );
+  const videoCategoryOpen = Object.entries(openCategories).some(
+    ([id, open]) => open && Object.values(categoriesByPlatform).flat().find((c) => c.id === id)?.processing_type === "video"
+  );
+
+  // Load platforms + their categories
+  useEffect(() => {
+    fetch("/api/platforms/user")
+      .then((r) => r.json())
+      .then(async (platformList: Platform[]) => {
+        setPlatforms(platformList);
+        const entries = await Promise.all(
+          platformList.map(async (p) => {
+            const cats = await fetch(`/api/categories?platform_id=${p.id}`).then((r) => r.ok ? r.json() : []);
+            return [p.id, cats] as const;
+          })
+        );
+        const map: Record<string, Category[]> = {};
+        for (const [id, cats] of entries) map[id] = cats;
+        setCategoriesByPlatform(map);
+        setOpenPlatforms((prev) => {
+          const next = { ...prev };
+          for (const p of platformList) if (!(p.id in next)) next[p.id] = true;
+          return next;
+        });
+      });
+  }, []);
+
+  // Load department-grouped workflows/articles
   useEffect(() => {
     fetch("/api/nav")
       .then((r) => r.json())
-      .then((data: SidebarNavData) => {
-        setNav(data);
-        if (!initialized.current) {
-          initialized.current = true;
-          const { section, dept, subSection } = detectActive(data, activeWorkflowId, activeArticleId);
-          if (section) {
-            setOpenSections((p) => ({ ...p, [section]: true }));
-            if (subSection) {
-              setOpenSubSections((p) => ({ ...p, [subSection]: true }));
-            }
-            if (dept) {
-              setOpenDepts((p) => ({ ...p, [dept]: true }));
-            }
-          }
-          if (activeSedId) {
-            setOpenSections((p) => ({ ...p, seds: true }));
-          }
-          if (activeVideoId) {
-            setOpenSections((p) => ({ ...p, videoGuides: true }));
-          }
-        }
-      });
+      .then((data: SidebarNavData) => setNav(data));
+  }, [refreshKey]);
+
+  // Auto-open the relevant platform/category/department when an active item is passed in
+  useEffect(() => {
+    if (initialized.current) return;
+    if (!platforms || !nav) return;
+    initialized.current = true;
+
+    const allCats = platforms.flatMap((p) => (categoriesByPlatform[p.id] ?? []).map((c) => ({ ...c, platformId: p.id })));
+
+    function openFor(processingType: string) {
+      const cat = allCats.find((c) => c.processing_type === processingType);
+      if (!cat) return null;
+      setOpenPlatforms((prev) => ({ ...prev, [cat.platformId]: true }));
+      setOpenCategories((prev) => ({ ...prev, [cat.id]: true }));
+      return cat;
+    }
+
+    if (activeWorkflowId) {
+      const dept = nav.businessRules.find((d) => d.workflows.some((w) => w.id === activeWorkflowId));
+      const cat = openFor("rules");
+      if (cat && dept) setOpenDepts((prev) => ({ ...prev, [`${cat.id}:${dept.department}`]: true }));
+    }
+    if (activeArticleId) {
+      let dept = nav.howToGuides.find((d) => d.articles.some((a) => a.id === activeArticleId));
+      const sub = dept ? "howToGuides" : "trainingMaterial";
+      if (!dept) dept = nav.trainingMaterial.find((d) => d.articles.some((a) => a.id === activeArticleId));
+      const cat = openFor("article");
+      if (cat) {
+        setOpenSubSections((prev) => ({ ...prev, [`${cat.id}:${sub}`]: true }));
+        if (dept) setOpenDepts((prev) => ({ ...prev, [`${cat.id}:${sub}:${dept!.department}`]: true }));
+      }
+    }
+    if (activeSedId) openFor("sed");
+    if (activeVideoId) openFor("video");
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkflowId, activeArticleId, activeSedId, activeVideoId, refreshKey]);
+  }, [platforms, nav, activeWorkflowId, activeArticleId, activeSedId, activeVideoId]);
 
   useEffect(() => {
-    if (!openSections.seds) return;
+    if (!sedCategoryOpen) return;
     fetch("/api/seds")
       .then((r) => r.json())
       .then((data: NavSed[]) => setSeds(data))
       .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openSections.seds]);
+  }, [sedCategoryOpen]);
 
   useEffect(() => {
-    if (!openSections.videoGuides) return;
+    if (!videoCategoryOpen) return;
     fetch("/api/videos")
       .then((r) => r.json())
       .then((data: NavVideo[]) => setVideos(data))
       .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openSections.videoGuides]);
+  }, [videoCategoryOpen]);
 
   useEffect(() => {
     const handler = () => {
-      fetch("/api/nav")
-        .then((r) => r.json())
-        .then((data: SidebarNavData) => setNav(data));
-      if (openSections.seds) {
-        fetch("/api/seds")
-          .then((r) => r.json())
-          .then((data: NavSed[]) => setSeds(data))
-          .catch(() => {});
+      fetch("/api/nav").then((r) => r.json()).then((data: SidebarNavData) => setNav(data));
+      if (sedCategoryOpen) {
+        fetch("/api/seds").then((r) => r.json()).then((data: NavSed[]) => setSeds(data)).catch(() => {});
       }
-      if (openSections.videoGuides) {
-        fetch("/api/videos")
-          .then((r) => r.json())
-          .then((data: NavVideo[]) => setVideos(data))
-          .catch(() => {});
+      if (videoCategoryOpen) {
+        fetch("/api/videos").then((r) => r.json()).then((data: NavVideo[]) => setVideos(data)).catch(() => {});
       }
     };
     window.addEventListener("wiki:content-updated", handler);
     return () => window.removeEventListener("wiki:content-updated", handler);
-  }, [openSections.seds, openSections.videoGuides]);
+  }, [sedCategoryOpen, videoCategoryOpen]);
 
-  function toggleSection(s: Section) {
-    setOpenSections((p) => ({ ...p, [s]: !p[s] }));
+  function togglePlatform(id: string) {
+    setOpenPlatforms((p) => ({ ...p, [id]: !p[id] }));
   }
-
-  function toggleSubSection(s: SubSection) {
-    setOpenSubSections((p) => ({ ...p, [s]: !p[s] }));
+  function toggleCategory(id: string) {
+    setOpenCategories((p) => ({ ...p, [id]: !p[id] }));
   }
-
+  function toggleSubSection(key: string) {
+    setOpenSubSections((p) => ({ ...p, [key]: !p[key] }));
+  }
   function toggleDept(key: string) {
     setOpenDepts((p) => ({ ...p, [key]: !p[key] }));
   }
 
-  function isDeptOpen(key: string) {
-    return !!openDepts[key];
+  function renderRulesCategory(cat: Category) {
+    if (!nav) return null;
+    return (
+      <div key={cat.id}>
+        <NavHeader label={cat.name} depth={1} open={!!openCategories[cat.id]} onToggle={() => toggleCategory(cat.id)} />
+        {openCategories[cat.id] && nav.businessRules.map((d) => {
+          const totalRules = d.workflows.reduce((sum, w) => sum + Number(w.rule_count), 0);
+          const key = `${cat.id}:${d.department}`;
+          const open = !!openDepts[key];
+          return (
+            <div key={d.department}>
+              <NavHeader label={d.department} depth={2} badge={String(totalRules)} open={open} onToggle={() => toggleDept(key)} />
+              {open && (
+                <ItemGroup depth={2}>
+                  {d.workflows.map((w) => (
+                    <ItemLink key={w.id} href={`/workflow/${w.id}`} label={w.name} active={w.id === activeWorkflowId} />
+                  ))}
+                </ItemGroup>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderArticleCategory(cat: Category) {
+    if (!nav) return null;
+    const groups: { key: "howToGuides" | "trainingMaterial"; label: string; data: NavDeptArticles[] }[] = [
+      { key: "howToGuides", label: "How-to guides", data: nav.howToGuides },
+      { key: "trainingMaterial", label: "Training material", data: nav.trainingMaterial },
+    ];
+    return (
+      <div key={cat.id}>
+        <NavHeader label={cat.name} depth={1} open={!!openCategories[cat.id]} onToggle={() => toggleCategory(cat.id)} />
+        {openCategories[cat.id] && groups.map((g) => {
+          const subKey = `${cat.id}:${g.key}`;
+          const subOpen = !!openSubSections[subKey];
+          return (
+            <div key={g.key}>
+              <NavHeader label={g.label} depth={2} open={subOpen} onToggle={() => toggleSubSection(subKey)} />
+              {subOpen && g.data.map((d) => {
+                const deptKey = `${subKey}:${d.department}`;
+                const deptOpen = !!openDepts[deptKey];
+                return (
+                  <div key={d.department}>
+                    <NavHeader label={d.department} depth={3} open={deptOpen} onToggle={() => toggleDept(deptKey)} />
+                    {deptOpen && (
+                      <ItemGroup depth={3}>
+                        {d.articles.map((a) => (
+                          <ItemLink
+                            key={a.id}
+                            href={`/article/${a.id}`}
+                            label={a.title}
+                            active={a.id === activeArticleId}
+                            dot={a.stakeholder_validated ? "#4ade80" : "#f59e0b"}
+                          />
+                        ))}
+                      </ItemGroup>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderVideoCategory(cat: Category) {
+    const grouped: Record<string, NavVideo[]> = {};
+    for (const v of videos) {
+      if (!grouped[v.department]) grouped[v.department] = [];
+      grouped[v.department].push(v);
+    }
+    return (
+      <div key={cat.id}>
+        <NavHeader label={cat.name} depth={1} open={!!openCategories[cat.id]} onToggle={() => toggleCategory(cat.id)} />
+        {openCategories[cat.id] && Object.entries(grouped).map(([dept, items]) => {
+          const key = `${cat.id}:${dept}`;
+          const open = !!openDepts[key];
+          return (
+            <div key={dept}>
+              <NavHeader label={dept} depth={2} badge={String(items.length)} open={open} onToggle={() => toggleDept(key)} />
+              {open && (
+                <ItemGroup depth={2}>
+                  {items.map((v) => (
+                    <ItemLink key={v.id} href={`/video/${v.id}`} label={`▶ ${v.title}`} active={v.id === activeVideoId} />
+                  ))}
+                </ItemGroup>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderSedCategory(cat: Category) {
+    const q = sedSearch.trim().toLowerCase();
+    const filtered = q
+      ? seds.filter((s) => s.ticket_number.toLowerCase().includes(q) || s.project_title.toLowerCase().includes(q))
+      : seds;
+    const sorted = [...filtered].sort((a, b) => {
+      const da = a.date ?? a.created_at ?? "";
+      const db = b.date ?? b.created_at ?? "";
+      return db.localeCompare(da);
+    });
+    return (
+      <div key={cat.id}>
+        <NavHeader label={cat.name} depth={1} href="/seds" open={!!openCategories[cat.id]} onToggle={() => toggleCategory(cat.id)} />
+        {openCategories[cat.id] && (
+          <div style={{ padding: "2px 16px 8px 24px" }}>
+            <input
+              type="text"
+              value={sedSearch}
+              onChange={(e) => setSedSearch(e.target.value)}
+              placeholder="Search SED # or title…"
+              style={{
+                width: "100%", boxSizing: "border-box",
+                fontSize: 12, padding: "6px 8px", borderRadius: 6,
+                border: "1px solid var(--card-border)",
+                background: "var(--sidebar-bg)", color: "var(--foreground)",
+                outline: "none", marginBottom: 4,
+              }}
+            />
+            {sorted.length === 0 ? (
+              <p style={{ fontSize: 12, color: "var(--muted-light)", padding: "6px 8px", margin: 0 }}>No SEDs found.</p>
+            ) : (
+              <div>
+                {sorted.map((s) => {
+                  const active = s.id === activeSedId;
+                  const dateStr = (s.date ?? s.created_at ?? "").slice(0, 10) || "—";
+                  return (
+                    <a
+                      key={s.id}
+                      href={`/sed/${s.id}`}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        padding: "5px 8px", fontSize: 12,
+                        color: active ? "var(--foreground)" : "var(--muted)",
+                        fontWeight: active ? 600 : 400,
+                        background: active ? "var(--card-hover-bg)" : "none",
+                        textDecoration: "none", borderRadius: 5,
+                        borderLeft: active ? "2px solid var(--foreground)" : "2px solid transparent",
+                        marginLeft: -2,
+                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                      }}
+                      onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "var(--card-hover-bg)"; e.currentTarget.style.color = "var(--foreground)"; } }}
+                      onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--muted)"; } }}
+                    >
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {`${s.ticket_number} — ${s.project_title}`.slice(0, 40)}
+                      </span>
+                      <span style={{ fontSize: 10, color: "var(--muted-light)", flexShrink: 0 }}>{dateStr}</span>
+                    </a>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function renderCategory(cat: Category) {
+    switch (cat.processing_type) {
+      case "rules": return renderRulesCategory(cat);
+      case "article": return renderArticleCategory(cat);
+      case "video": return renderVideoCategory(cat);
+      case "sed": return renderSedCategory(cat);
+      default: return null;
+    }
   }
 
   return (
@@ -346,287 +517,21 @@ export function Sidebar({
 
       {/* Nav sections */}
       <nav style={{ flex: 1, paddingTop: 4, overflowY: "auto" }}>
-        {nav && (
-          <>
-            {/* ── Business Rules ── */}
-            <SectionHeader
-              label="Business Rules"
-              open={openSections.businessRules}
-              onToggle={() => toggleSection("businessRules")}
-            />
-            {openSections.businessRules && nav.businessRules.map((d) => {
-              const totalRules = d.workflows.reduce((sum, w) => sum + Number(w.rule_count), 0);
-              const key = `businessRules:${d.department}`;
-              const open = isDeptOpen(key);
-              return (
-                <div key={d.department}>
-                  <DeptHeader
-                    label={d.department}
-                    badge={String(totalRules)}
-                    open={open}
-                    onToggle={() => toggleDept(key)}
-                  />
-                  {open && (
-                    <div style={{ marginLeft: 28, paddingLeft: 10, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
-                      {d.workflows.map((w) => {
-                        const active = w.id === activeWorkflowId;
-                        return (
-                          <a
-                            key={w.id}
-                            href={`/workflow/${w.id}`}
-                            style={{
-                              display: "block", padding: "5px 8px", fontSize: 12,
-                              color: active ? "var(--foreground)" : "var(--muted)",
-                              fontWeight: active ? 600 : 400,
-                              background: active ? "var(--card-hover-bg)" : "none",
-                              borderRadius: 5, textDecoration: "none",
-                              borderLeft: active ? "2px solid var(--foreground)" : "2px solid transparent",
-                              marginLeft: -2,
-                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                            }}
-                            onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "var(--card-hover-bg)"; e.currentTarget.style.color = "var(--foreground)"; } }}
-                            onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--muted)"; } }}
-                          >
-                            {w.name}
-                          </a>
-                        );
-                      })}
-                    </div>
-                  )}
+        {platforms && platforms.map((p, pIdx) => {
+          const cats = categoriesByPlatform[p.id] ?? [];
+          return (
+            <div key={p.id}>
+              <NavHeader label={p.name} depth={0} open={!!openPlatforms[p.id]} onToggle={() => togglePlatform(p.id)} />
+              {openPlatforms[p.id] && cats.map((c, cIdx) => (
+                <div key={c.id}>
+                  {renderCategory(c)}
+                  {cIdx < cats.length - 1 && SECTION_SEPARATOR}
                 </div>
-              );
-            })}
-
-            {SECTION_SEPARATOR}
-
-            {/* ── Reference Articles ── */}
-            <SectionHeader
-              label="Reference Articles"
-              open={openSections.referenceArticles}
-              onToggle={() => toggleSection("referenceArticles")}
-            />
-            {openSections.referenceArticles && (
-              <>
-                {/* How-to guides sub-section */}
-                <SubSectionHeader
-                  label="How-to guides"
-                  open={openSubSections.howToGuides}
-                  onToggle={() => toggleSubSection("howToGuides")}
-                />
-                {openSubSections.howToGuides && nav.howToGuides.map((d) => {
-                  const key = `howToGuides:${d.department}`;
-                  const open = isDeptOpen(key);
-                  return (
-                    <div key={d.department}>
-                      <SubDeptHeader
-                        label={d.department}
-                        open={open}
-                        onToggle={() => toggleDept(key)}
-                      />
-                      {open && (
-                        <div style={{ marginLeft: 36, paddingLeft: 10, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
-                          {d.articles.map((a) => (
-                            <ArticleLink key={a.id} article={a} active={a.id === activeArticleId} />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-
-                {/* Training material sub-section */}
-                <SubSectionHeader
-                  label="Training material"
-                  open={openSubSections.trainingMaterial}
-                  onToggle={() => toggleSubSection("trainingMaterial")}
-                />
-                {openSubSections.trainingMaterial && nav.trainingMaterial.map((d) => {
-                  const key = `trainingMaterial:${d.department}`;
-                  const open = isDeptOpen(key);
-                  return (
-                    <div key={d.department}>
-                      <SubDeptHeader
-                        label={d.department}
-                        open={open}
-                        onToggle={() => toggleDept(key)}
-                      />
-                      {open && (
-                        <div style={{ marginLeft: 36, paddingLeft: 10, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
-                          {d.articles.map((a) => (
-                            <ArticleLink key={a.id} article={a} active={a.id === activeArticleId} />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </>
-            )}
-
-            {SECTION_SEPARATOR}
-
-            {/* ── Video guides ── */}
-            <SectionHeader
-              label="Video guides"
-              open={openSections.videoGuides}
-              onToggle={() => toggleSection("videoGuides")}
-            />
-            {openSections.videoGuides && (
-              <>
-                {(() => {
-                  const grouped: Record<string, NavVideo[]> = {};
-                  for (const v of videos) {
-                    if (!grouped[v.department]) grouped[v.department] = [];
-                    grouped[v.department].push(v);
-                  }
-                  return Object.entries(grouped).map(([dept, items]) => {
-                    const key = `videoGuides:${dept}`;
-                    const open = isDeptOpen(key);
-                    return (
-                      <div key={dept}>
-                        <DeptHeader
-                          label={dept}
-                          badge={String(items.length)}
-                          open={open}
-                          onToggle={() => toggleDept(key)}
-                        />
-                        {open && (
-                          <div style={{ marginLeft: 28, paddingLeft: 10, borderLeft: "1px solid var(--card-border)", marginBottom: 2 }}>
-                            {items.map((v) => {
-                              const active = v.id === activeVideoId;
-                              return (
-                                <a
-                                  key={v.id}
-                                  href={`/video/${v.id}`}
-                                  style={{
-                                    display: "flex", alignItems: "center", gap: 6,
-                                    padding: "5px 8px", fontSize: 12,
-                                    color: active ? "var(--foreground)" : "var(--muted)",
-                                    fontWeight: active ? 600 : 400,
-                                    background: active ? "var(--card-hover-bg)" : "none",
-                                    textDecoration: "none", borderRadius: 5,
-                                    borderLeft: active ? "2px solid var(--foreground)" : "2px solid transparent",
-                                    marginLeft: -2,
-                                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                                  }}
-                                  onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "var(--card-hover-bg)"; e.currentTarget.style.color = "var(--foreground)"; } }}
-                                  onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--muted)"; } }}
-                                >
-                                  <span style={{ flexShrink: 0 }}>▶</span>
-                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.title}</span>
-                                </a>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  });
-                })()}
-              </>
-            )}
-
-            {SECTION_SEPARATOR}
-
-            {/* ── SEDs ── */}
-            <div style={{ display: "flex", alignItems: "center", width: "100%" }}>
-              <a
-                href="/seds"
-                style={{
-                  flex: 1, padding: "9px 0 8px 16px",
-                  fontSize: 12, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase",
-                  color: "var(--foreground)", textDecoration: "none",
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                SEDs
-              </a>
-              <button
-                onClick={() => toggleSection("seds")}
-                style={{
-                  background: "none", border: "none", cursor: "pointer",
-                  padding: "9px 16px 8px 8px",
-                  display: "flex", alignItems: "center",
-                }}
-              >
-                <ChevronIcon rotated={openSections.seds} />
-              </button>
+              ))}
+              {pIdx < platforms.length - 1 && SECTION_SEPARATOR}
             </div>
-            {openSections.seds && (
-              <div style={{ padding: "2px 16px 8px" }}>
-                <input
-                  type="text"
-                  value={sedSearch}
-                  onChange={(e) => setSedSearch(e.target.value)}
-                  placeholder="Search SED # or title…"
-                  style={{
-                    width: "100%", boxSizing: "border-box",
-                    fontSize: 12, padding: "6px 8px", borderRadius: 6,
-                    border: "1px solid var(--card-border)",
-                    background: "var(--sidebar-bg)", color: "var(--foreground)",
-                    outline: "none", marginBottom: 4,
-                  }}
-                />
-                {(() => {
-                  const q = sedSearch.trim().toLowerCase();
-                  const filtered = q
-                    ? seds.filter(
-                        (s) =>
-                          s.ticket_number.toLowerCase().includes(q) ||
-                          s.project_title.toLowerCase().includes(q)
-                      )
-                    : seds;
-                  const sorted = [...filtered].sort((a, b) => {
-                    const da = a.date ?? a.created_at ?? "";
-                    const db = b.date ?? b.created_at ?? "";
-                    return db.localeCompare(da);
-                  });
-                  if (sorted.length === 0) {
-                    return (
-                      <p style={{ fontSize: 12, color: "var(--muted-light)", padding: "6px 8px", margin: 0 }}>
-                        No SEDs found.
-                      </p>
-                    );
-                  }
-                  return (
-                    <div>
-                      {sorted.map((s) => {
-                        const active = s.id === activeSedId;
-                        const dateStr = (s.date ?? s.created_at ?? "").slice(0, 10) || "—";
-                        return (
-                          <a
-                            key={s.id}
-                            href={`/sed/${s.id}`}
-                            style={{
-                              display: "flex", alignItems: "center", gap: 6,
-                              padding: "5px 8px", fontSize: 12,
-                              color: active ? "var(--foreground)" : "var(--muted)",
-                              fontWeight: active ? 600 : 400,
-                              background: active ? "var(--card-hover-bg)" : "none",
-                              textDecoration: "none", borderRadius: 5,
-                              borderLeft: active ? "2px solid var(--foreground)" : "2px solid transparent",
-                              marginLeft: -2,
-                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                            }}
-                            onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "var(--card-hover-bg)"; e.currentTarget.style.color = "var(--foreground)"; } }}
-                            onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--muted)"; } }}
-                          >
-                            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {`${s.ticket_number} — ${s.project_title}`.slice(0, 40)}
-                            </span>
-                            <span style={{ fontSize: 10, color: "var(--muted-light)", flexShrink: 0 }}>
-                              {dateStr}
-                            </span>
-                          </a>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-          </>
-        )}
+          );
+        })}
       </nav>
 
       {/* Footer */}

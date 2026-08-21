@@ -53,6 +53,16 @@ export async function PATCH(
     }
   }
 
+  if (Array.isArray(body.platforms)) {
+    await query(`DELETE FROM user_platforms WHERE user_id = $1`, [id]);
+    for (const platformId of body.platforms) {
+      await query(
+        `INSERT INTO user_platforms (user_id, platform_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [id, platformId]
+      );
+    }
+  }
+
   return NextResponse.json({ success: true });
 }
 

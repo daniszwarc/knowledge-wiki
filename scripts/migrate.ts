@@ -410,6 +410,63 @@ async function migrate() {
 
     console.log("Embedding columns migrated to vector(4096) — no ANN indexes (pgvector ivfflat/hnsw cap at 2000 dims)");
 
+    // Platforms table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS platforms (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name       TEXT NOT NULL,
+        slug       TEXT UNIQUE NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT now()
+      )
+    `);
+
+    // Junction table: users granted access to one or more platforms
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_platforms (
+        user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        platform_id UUID NOT NULL REFERENCES platforms(id) ON DELETE CASCADE,
+        PRIMARY KEY (user_id, platform_id)
+      )
+    `);
+
+    // Categories table: configurable document categories per platform
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS categories (
+        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        platform_id     UUID NOT NULL REFERENCES platforms(id) ON DELETE CASCADE,
+        name            TEXT NOT NULL,
+        description     TEXT,
+        accepted_files  TEXT[] NOT NULL,
+        form_fields     JSONB NOT NULL,
+        processing_type TEXT NOT NULL
+          CHECK (processing_type IN ('rules', 'article', 'sed', 'video')),
+        created_at      TIMESTAMPTZ DEFAULT now()
+      )
+    `);
+
+    // Seed the WebApps platform and its four existing document types
+    await client.query(`
+      INSERT INTO platforms (name, slug) VALUES ('WebApps', 'webapps')
+      ON CONFLICT (slug) DO NOTHING
+    `);
+
+    await client.query(`
+      INSERT INTO categories (platform_id, name, description, accepted_files, form_fields, processing_type)
+      SELECT p.id, c.name, c.description, c.accepted_files, c.form_fields, c.processing_type
+      FROM platforms p
+      CROSS JOIN (VALUES
+        ('Process document', NULL, ARRAY['pdf','docx','txt'], '{"title":true,"department":true,"company":true}'::jsonb, 'rules'),
+        ('Reference article', NULL, ARRAY['pdf','docx','txt'], '{"title":true,"department":true,"company":true}'::jsonb, 'article'),
+        ('SED', NULL, ARRAY['docx'], '{"title":true,"department":true,"company":true}'::jsonb, 'sed'),
+        ('Video guide', NULL, ARRAY['vtt'], '{"title":true,"department":true,"company":true,"embed_url":true}'::jsonb, 'video')
+      ) AS c(name, description, accepted_files, form_fields, processing_type)
+      WHERE p.slug = 'webapps'
+        AND NOT EXISTS (
+          SELECT 1 FROM categories existing
+          WHERE existing.platform_id = p.id AND existing.name = c.name
+        )
+    `);
+
     await client.query("COMMIT");
     console.log("Migration completed successfully");
   } catch (err) {

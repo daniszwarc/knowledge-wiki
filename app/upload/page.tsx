@@ -15,7 +15,22 @@ interface Company {
   name: string;
 }
 
-type DocType = "process" | "article" | "sed" | "video";
+interface Platform {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+interface Category {
+  id: string;
+  platform_id: string;
+  name: string;
+  description: string | null;
+  accepted_files: string[];
+  processing_type: "rules" | "article" | "sed" | "video" | string;
+}
+
+type DocType = "rules" | "article" | "sed" | "video";
 
 type SFileStatus = "pending" | "processing" | "success" | "error";
 
@@ -46,20 +61,29 @@ const STAGES: [number, number, string][] = [
   [220000, 92, "Just a moment…"],
 ];
 
-const DOC_TYPES: { id: DocType; title: string; description: string }[] = [
-  { id: "process", title: "Process document", description: "Extracts business rules into a workflow" },
-  { id: "article", title: "Reference article", description: "How-to guide, training material, or both" },
-  { id: "sed", title: "SED", description: "Small enhancement document" },
-  { id: "video", title: "Video guide", description: "SharePoint video with VTT transcript" },
-];
+const PROCESSING_TYPE_FALLBACK_DESCRIPTION: Record<string, string> = {
+  rules: "Extracts business rules into a workflow",
+  article: "How-to guide, training material, or both",
+  sed: "Small enhancement document",
+  video: "SharePoint video with VTT transcript",
+};
 
 export default function UploadPage() {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [selectedType, setSelectedType] = useState<DocType>("process");
+  const [platforms, setPlatforms] = useState<Platform[]>([]);
+  const [categoriesByPlatform, setCategoriesByPlatform] = useState<Record<string, Category[]>>({});
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
+
+  const allCategories = platforms.flatMap((p) => categoriesByPlatform[p.id] ?? []);
+  const selectedCategory = allCategories.find((c) => c.id === selectedCategoryId) ?? null;
+  const selectedType = (selectedCategory?.processing_type as DocType) ?? null;
+  const acceptAttr = selectedCategory ? selectedCategory.accepted_files.map((f) => `.${f}`).join(",") : "";
+  const acceptLabel = selectedCategory ? selectedCategory.accepted_files.map((f) => f.toUpperCase()).join(" · ") : "";
 
   // Process form
   const [pFile, setPFile] = useState<File | null>(null);
@@ -122,6 +146,24 @@ export default function UploadPage() {
     fetch("/api/companies/user")
       .then((r) => (r.ok ? r.json() : []))
       .then((data: Company[]) => setCompanies(data));
+
+    fetch("/api/platforms/user")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(async (platformList: Platform[]) => {
+        setPlatforms(platformList);
+        const entries = await Promise.all(
+          platformList.map(async (p) => {
+            const cats = await fetch(`/api/categories?platform_id=${p.id}`).then((r) => (r.ok ? r.json() : []));
+            return [p.id, cats] as const;
+          })
+        );
+        const map: Record<string, Category[]> = {};
+        for (const [id, cats] of entries) map[id] = cats;
+        setCategoriesByPlatform(map);
+        const firstCategory = platformList.flatMap((p) => map[p.id] ?? [])[0];
+        if (firstCategory) setSelectedCategoryId(firstCategory.id);
+        setCategoriesLoading(false);
+      });
   }, []);
 
   if (authLoading) return null;
@@ -173,7 +215,7 @@ export default function UploadPage() {
     try {
       const fd = new FormData();
 
-      if (selectedType === "process") {
+      if (selectedType === "rules") {
         if (!pFile || !pWorkflow.trim() || !pDept.trim()) return;
         fd.append("file", pFile);
         fd.append("workflow_name", pWorkflow.trim());
@@ -264,7 +306,8 @@ export default function UploadPage() {
 
   function isDisabled(): boolean {
     if (loading) return true;
-    if (selectedType === "process") return !pFile || !pWorkflow.trim() || !pDept.trim();
+    if (!selectedCategory) return true;
+    if (selectedType === "rules") return !pFile || !pWorkflow.trim() || !pDept.trim();
     if (selectedType === "article") return !aFile || !aTitle.trim() || !aDept.trim() || aAppearsAs.size === 0;
     if (selectedType === "video") return !vFile || !vTitle.trim() || !vDept.trim() || !vEmbedUrl.trim();
     return sFiles.length === 0;
@@ -332,41 +375,62 @@ export default function UploadPage() {
           </div>
 
           {/* Type selector */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, marginBottom: 20 }}>
-            {DOC_TYPES.map((dt) => {
-              const selected = selectedType === dt.id;
+          {categoriesLoading ? (
+            <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20 }}>Loading document types…</p>
+          ) : allCategories.length === 0 ? (
+            <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 20 }}>
+              No document categories available. Contact an admin to get platform access.
+            </p>
+          ) : (
+            platforms.map((p) => {
+              const cats = categoriesByPlatform[p.id] ?? [];
+              if (cats.length === 0) return null;
               return (
-                <button
-                  key={dt.id}
-                  type="button"
-                  onClick={() => { setSelectedType(dt.id); setResult(null); setError(""); }}
-                  style={{
-                    border: selected ? "2px solid var(--foreground)" : "0.5px solid var(--card-border)",
-                    borderRadius: 12,
-                    padding: "16px 18px",
-                    textAlign: "left",
-                    cursor: "pointer",
-                    background: selected ? "var(--card-hover-bg)" : "var(--sidebar-bg)",
-                    transition: "border-color 0.1s, background 0.1s",
-                  }}
-                >
-                  <div style={{ fontSize: 13, fontWeight: selected ? 700 : 500, color: "var(--foreground)", marginBottom: 4 }}>
-                    {dt.title}
+                <div key={p.id} style={{ marginBottom: 20 }}>
+                  {platforms.length > 1 && (
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                      {p.name}
+                    </div>
+                  )}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+                    {cats.map((c) => {
+                      const selected = selectedCategoryId === c.id;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => { setSelectedCategoryId(c.id); setResult(null); setError(""); }}
+                          style={{
+                            border: selected ? "2px solid var(--foreground)" : "0.5px solid var(--card-border)",
+                            borderRadius: 12,
+                            padding: "16px 18px",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            background: selected ? "var(--card-hover-bg)" : "var(--sidebar-bg)",
+                            transition: "border-color 0.1s, background 0.1s",
+                          }}
+                        >
+                          <div style={{ fontSize: 13, fontWeight: selected ? 700 : 500, color: "var(--foreground)", marginBottom: 4 }}>
+                            {c.name}
+                          </div>
+                          <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>
+                            {c.description || PROCESSING_TYPE_FALLBACK_DESCRIPTION[c.processing_type] || ""}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>
-                    {dt.description}
-                  </div>
-                </button>
+                </div>
               );
-            })}
-          </div>
+            })
+          )}
 
           {/* Form card */}
           <div style={{ border: "0.5px solid var(--card-border)", borderRadius: 12, padding: "24px 28px" }}>
             <form onSubmit={handleSubmit}>
 
               {/* ── Process document ── */}
-              {selectedType === "process" && (
+              {selectedType === "rules" && (
                 <>
                   <div
                     onClick={() => pFileRef.current?.click()}
@@ -375,11 +439,11 @@ export default function UploadPage() {
                     onDrop={(e) => { e.preventDefault(); setPDragging(false); const f = e.dataTransfer.files[0]; if (f) setPFile(f); }}
                     style={{ ...dropzoneBase, border: `1.5px dashed ${pDragging ? "var(--foreground)" : "var(--card-border)"}`, background: pDragging ? "var(--card-hover-bg)" : "var(--sidebar-bg)" }}
                   >
-                    <input ref={pFileRef} type="file" accept=".pdf,.docx,.txt" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) setPFile(f); }} />
+                    <input ref={pFileRef} type="file" accept={acceptAttr} style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) setPFile(f); }} />
                     <span style={{ fontSize: 13, color: pFile ? "var(--foreground)" : "var(--muted-light)" }}>
-                      {pFile ? pFile.name : "Drop a PDF, DOCX, or TXT file here, or click to browse"}
+                      {pFile ? pFile.name : `Drop a ${acceptLabel} file here, or click to browse`}
                     </span>
-                    {!pFile && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>PDF · DOCX · TXT</div>}
+                    {!pFile && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>{acceptLabel}</div>}
                   </div>
                   <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
                     <input
@@ -415,11 +479,11 @@ export default function UploadPage() {
                     onDrop={(e) => { e.preventDefault(); setADragging(false); const f = e.dataTransfer.files[0]; if (f) setAFile(f); }}
                     style={{ ...dropzoneBase, border: `1.5px dashed ${aDragging ? "var(--foreground)" : "var(--card-border)"}`, background: aDragging ? "var(--card-hover-bg)" : "var(--sidebar-bg)" }}
                   >
-                    <input ref={aFileRef} type="file" accept=".pdf,.docx,.txt" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) setAFile(f); }} />
+                    <input ref={aFileRef} type="file" accept={acceptAttr} style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) setAFile(f); }} />
                     <span style={{ fontSize: 13, color: aFile ? "var(--foreground)" : "var(--muted-light)" }}>
-                      {aFile ? aFile.name : "Drop a PDF, DOCX, or TXT file here, or click to browse"}
+                      {aFile ? aFile.name : `Drop a ${acceptLabel} file here, or click to browse`}
                     </span>
-                    {!aFile && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>PDF · DOCX · TXT</div>}
+                    {!aFile && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>{acceptLabel}</div>}
                   </div>
                   <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
                     <input
@@ -492,11 +556,11 @@ export default function UploadPage() {
                     onDrop={(e) => { e.preventDefault(); setVDragging(false); const f = e.dataTransfer.files[0]; if (f) setVFile(f); }}
                     style={{ ...dropzoneBase, border: `1.5px dashed ${vDragging ? "var(--foreground)" : "var(--card-border)"}`, background: vDragging ? "var(--card-hover-bg)" : "var(--sidebar-bg)" }}
                   >
-                    <input ref={vFileRef} type="file" accept=".vtt" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) setVFile(f); }} />
+                    <input ref={vFileRef} type="file" accept={acceptAttr} style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) setVFile(f); }} />
                     <span style={{ fontSize: 13, color: vFile ? "var(--foreground)" : "var(--muted-light)" }}>
-                      {vFile ? vFile.name : "Drop a VTT transcript file here, or click to browse"}
+                      {vFile ? vFile.name : `Drop a ${acceptLabel} transcript file here, or click to browse`}
                     </span>
-                    {!vFile && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>VTT only</div>}
+                    {!vFile && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>{acceptLabel} only</div>}
                   </div>
                   <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
                     <input
@@ -550,7 +614,7 @@ export default function UploadPage() {
                     <input
                       ref={sFileRef}
                       type="file"
-                      accept=".docx"
+                      accept={acceptAttr}
                       multiple
                       style={{ display: "none" }}
                       onChange={(e) => {
@@ -562,9 +626,9 @@ export default function UploadPage() {
                       }}
                     />
                     <span style={{ fontSize: 13, color: sFiles.length > 0 ? "var(--foreground)" : "var(--muted-light)" }}>
-                      {sFiles.length > 0 ? sFiles.map((f) => f.file.name).join(", ") : "Drop one or more DOCX files here, or click to browse"}
+                      {sFiles.length > 0 ? sFiles.map((f) => f.file.name).join(", ") : `Drop one or more ${acceptLabel} files here, or click to browse`}
                     </span>
-                    {sFiles.length === 0 && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>DOCX only</div>}
+                    {sFiles.length === 0 && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>{acceptLabel} only</div>}
                   </div>
 
                   {sFiles.length > 0 && (

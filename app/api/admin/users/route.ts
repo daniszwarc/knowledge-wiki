@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { email, password, role, companies } = await req.json();
+  const { email, password, role, companies, platforms } = await req.json();
   if (!email || !password || !role) {
     return NextResponse.json({ error: "email, password, and role required" }, { status: 400 });
   }
@@ -88,6 +88,15 @@ export async function POST(req: NextRequest) {
       await query(
         `INSERT INTO user_companies (user_id, company_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
         [userId, companyId]
+      );
+    }
+  }
+
+  if (Array.isArray(platforms) && platforms.length > 0) {
+    for (const platformId of platforms) {
+      await query(
+        `INSERT INTO user_platforms (user_id, platform_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [userId, platformId]
       );
     }
   }
