@@ -1,0 +1,335 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>APiWiki — Codebase Cheatsheet</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: #1a1a1a;
+    font-size: 9.5pt;
+    line-height: 1.45;
+  }
+  h1 { font-size: 20pt; margin: 0 0 2pt 0; }
+  .subtitle { color: #555; font-size: 10pt; margin-bottom: 14pt; }
+  h2 {
+    font-size: 12.5pt;
+    background: #1a2b3c;
+    color: #fff;
+    padding: 5pt 8pt;
+    margin: 16pt 0 8pt 0;
+    border-radius: 3pt;
+    page-break-after: avoid;
+  }
+  h2 .num { opacity: 0.6; font-weight: normal; margin-right: 4pt; }
+  h3 {
+    font-size: 10.5pt;
+    margin: 10pt 0 4pt 0;
+    color: #1a2b3c;
+    border-bottom: 1.5pt solid #d8dde3;
+    padding-bottom: 2pt;
+    page-break-after: avoid;
+  }
+  p { margin: 4pt 0; }
+  code, .code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    background: #f0f2f5;
+    padding: 1pt 3pt;
+    border-radius: 2pt;
+    font-size: 8.7pt;
+    color: #a11f5b;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 4pt 0 8pt 0; }
+  th, td { text-align: left; padding: 3pt 6pt; vertical-align: top; border-bottom: 0.5pt solid #e2e5e9; font-size: 9pt; }
+  th { background: #eef1f4; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  .path { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.5pt; color: #0a5c8a; white-space: nowrap; }
+  ul { margin: 4pt 0; padding-left: 16pt; }
+  li { margin: 2pt 0; }
+  .callout {
+    background: #fff8e6; border-left: 3pt solid #d9a441; padding: 6pt 8pt; margin: 6pt 0; border-radius: 2pt;
+  }
+  .callout.warn { background: #fdecec; border-left-color: #c0392b; }
+  .callout b { color: #8a5a00; }
+  .callout.warn b { color: #8a1a0e; }
+  .cols2 { display: flex; gap: 12pt; }
+  .cols2 > div { flex: 1; }
+  .keyfile { border: 0.75pt solid #d8dde3; border-radius: 4pt; padding: 6pt 8pt; margin: 6pt 0; page-break-inside: avoid; }
+  .keyfile .kf-path { font-weight: 700; color: #0a5c8a; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 9.5pt; }
+  .keyfile .kf-breaks { color: #a11f1a; font-size: 8.7pt; margin-top: 3pt; }
+  .badge { display: inline-block; font-size: 7.5pt; font-weight: 700; padding: 1pt 5pt; border-radius: 8pt; margin-right: 3pt; }
+  .b-get { background: #dff0e0; color: #1e6b2e; }
+  .b-post { background: #dde8f5; color: #1a4a8a; }
+  .b-patch { background: #f5eedd; color: #8a6a1a; }
+  .b-delete { background: #f5dde0; color: #8a1a2a; }
+  .section-note { font-size: 8.7pt; color: #666; }
+  .toc { columns: 2; column-gap: 16pt; font-size: 9pt; margin: 8pt 0 4pt 0; }
+  .toc a { color: #0a5c8a; text-decoration: none; }
+  hr.sep { border: none; border-top: 1pt dashed #ccc; margin: 10pt 0; }
+</style>
+</head>
+<body>
+
+<h1>APiWiki — Codebase Cheatsheet</h1>
+<div class="subtitle">Navigation map &amp; reference guide · generated from actual repo contents · /Users/daniszwarc/Desktop/ClaudeCode/APiWiki</div>
+
+<h2><span class="num">1</span>Project Overview</h2>
+<p>
+APiWiki is an internal, on-premises "Knowledge Wiki" for APi Group used to capture, browse, validate, and search business-process
+rules, reference articles, Small Enhancement Documents (SEDs), and video guides extracted from source documents (PDF/DOCX/TXT/VTT).
+It exists to satisfy <b>SOX compliance</b> requirements: every change to rules, workflows, articles, SEDs, and videos is written to an
+append-only <code>audit_log</code> table with previous/new JSON values. Content is multi-tenant, scoped per <code>company</code>, with
+role-based access (viewer &lt; validator &lt; editor &lt; admin/developer/super_admin/company_admin). Users upload source documents; a
+Python/FastAPI ingestion pipeline extracts structured rules (via a LangGraph + LLM pipeline) or converts documents into articles/SEDs,
+then the Next.js wiki app lets stakeholders browse workflows, validate rules, flag gaps, chat with an AI assistant grounded in hybrid
+(full-text + vector) search, and manage users/companies/platforms as an admin. Everything runs self-hosted via Docker Compose behind
+Traefik — no Vercel, no external SaaS APIs beyond an optional "NaN Builders" LLM inference endpoint used instead of local Ollama.
+</p>
+
+<h2><span class="num">2</span>Stack</h2>
+<table>
+<tr><th>Technology</th><th>Role in THIS project</th></tr>
+<tr><td>Next.js 16 (App Router)</td><td>Main wiki web app — pages, API routes, middleware-based auth gate. <code>output: standalone</code> for Docker.</td></tr>
+<tr><td>React 19 / TypeScript strict</td><td>UI layer for all wiki pages under <code class="path">app/</code>.</td></tr>
+<tr><td>Tailwind CSS 4</td><td>Styling (via <code>@tailwindcss/postcss</code>).</td></tr>
+<tr><td>PostgreSQL 17 + pgvector</td><td>Single source of truth: workflows, rules, articles, SEDs, videos, users, sessions, audit_log, companies/platforms, plus 4096-dim embedding columns for semantic search.</td></tr>
+<tr><td>FastAPI (Python, <code class="path">pipeline/</code>)</td><td>Separate ingestion service (port 8000): parses uploaded documents, runs rule extraction, writes to Postgres, calls back to wiki's embed endpoints.</td></tr>
+<tr><td>LangGraph + LangChain</td><td>State-machine pipeline in <code class="path">pipeline/extract/pipeline.py</code> that chunks docs, extracts rules via LLM, deduplicates, writes to DB.</td></tr>
+<tr><td>Ollama-compatible LLM API</td><td>Chat + embeddings, either local Ollama (dev) or remote "NaN Builders" endpoint (<code>api.nan.builders</code>, models <code>qwen3.6</code>/<code>qwen3-embedding</code>) in prod. Abstracted in <code class="path">lib/ollama.ts</code>.</td></tr>
+<tr><td>OpenAI SDK (<code>openai</code> npm pkg)</td><td>Used directly (not via Ollama wrapper) in <code class="path">app/api/workflows/[id]/generate-narrative/route.ts</code> to produce workflow narratives.</td></tr>
+<tr><td>bcryptjs</td><td>Password hashing, cost factor 12.</td></tr>
+<tr><td>otplib + qrcode</td><td>TOTP-based 2FA secret generation, verification, and QR code rendering.</td></tr>
+<tr><td>nodemailer (Gmail SMTP)</td><td>Sends email-based 2FA codes and password-reset links.</td></tr>
+<tr><td>pg / pgvector (node)</td><td>Raw SQL access from Next.js via a shared <code>pg.Pool</code> (<code class="path">lib/db.ts</code>).</td></tr>
+<tr><td>psycopg2 (Python)</td><td>Raw SQL access from the pipeline (<code class="path">pipeline/db/client.py</code>), no connection pooling — new connection per call.</td></tr>
+<tr><td>PyMuPDF / python-docx / pdf2image</td><td>Document parsing in the pipeline for PDF/DOCX ingestion (incl. a vision/image loader path).</td></tr>
+<tr><td>Docker Compose + Traefik</td><td>Deployment: 3 services (postgres, wiki, pipeline) on shared network <code>n8n_default</code>, TLS via Traefik labels.</td></tr>
+<tr><td>cron (inside wiki container)</td><td>Runs <code class="path">scripts/backfill-embeddings.ts</code> every 15 minutes to fill any rows missing embeddings.</td></tr>
+</table>
+
+<h2><span class="num">3</span>Architecture Map</h2>
+<p><b>Ingestion (write) path:</b></p>
+<p><code>User uploads file (app/upload page)</code> → <code>app/api/upload/{process|article|sed|video}/route.ts</code> (role-checked, forwards multipart) →
+<code>pipeline (FastAPI) POST /ingest, /ingest/sed</code> → document loaded/chunked (<code class="path">pipeline/ingest/</code>) → for rule docs: LangGraph pipeline
+(<code class="path">pipeline/extract/pipeline.py</code>) extracts + dedupes rules via LLM → <code class="path">pipeline/db/client.py</code> writes rows to Postgres
+(<code>rules</code>/<code>articles</code>/<code>seds</code>) + <code>audit_log</code> → pipeline fires a background HTTP call back to the wiki's own
+<code>/api/embed</code>, <code>/api/articles/embed</code>, or <code>/api/seds/{id}/embed</code> endpoints, which call <code class="path">lib/ollama.ts</code>
+<code>embed()</code> and update the row's <code>embedding</code> column. Video guides skip the pipeline entirely — <code>app/api/upload/video/route.ts</code>
+calls the LLM chat-completions endpoint directly from Next.js using a parsed VTT transcript (<code class="path">lib/vtt.ts</code>).</p>
+<p><b>Read / query path:</b></p>
+<p><code>Browser</code> → <code>middleware.ts</code> (session cookie check via internal <code>/api/auth/me</code> call, RBAC path gating, injects
+<code>x-user-*</code> headers) → page/route handler → <code class="path">lib/db.ts</code> (plain SQL) or <code class="path">lib/search.ts</code>
+<code>hybridSearch()</code> (parallel Postgres full-text-search + pgvector KNN, merged via Reciprocal Rank Fusion) → Postgres → JSON response
+rendered by React pages.</p>
+<p><b>Auth path:</b> login → password check (<code class="path">lib/auth.ts</code>) → temp token (<code>wiki_temp</code> cookie) → 2FA (TOTP or email code) →
+session created (<code>wiki_session</code> cookie, 8h, SHA-256-hashed token stored in <code>sessions</code> table) → every subsequent request re-validated
+both in <code>middleware.ts</code> and independently inside most route handlers.</p>
+
+<h2><span class="num">4</span>Folder and File Map</h2>
+<table>
+<tr><th>Path</th><th>What it is / when you'd touch it</th></tr>
+<tr><td class="path">app/</td><td>Next.js App Router: all pages + all API routes. Touch for any UI or endpoint change.</td></tr>
+<tr><td class="path">app/api/</td><td>Every backend endpoint (auth, admin, content CRUD, search, chat, uploads). See section 6.</td></tr>
+<tr><td class="path">app/admin/</td><td>Admin-only pages: platforms, seds, users, videos management UI.</td></tr>
+<tr><td class="path">app/login/</td><td>Full login/2FA/password-reset page flow (multi-step).</td></tr>
+<tr><td class="path">app/{article,sed,video,workflow}/[id]/</td><td>Content detail pages, one per content type.</td></tr>
+<tr><td class="path">components/</td><td>Shared React components used across pages (visual layer).</td></tr>
+<tr><td class="path">lib/</td><td>Server-side shared logic: auth, db, email, ollama client, hybrid search, VTT parsing. Touch for any cross-cutting backend change.</td></tr>
+<tr><td class="path">pipeline/</td><td>Standalone Python FastAPI service for document ingestion/extraction. Separate deploy unit, separate language.</td></tr>
+<tr><td class="path">pipeline/extract/</td><td>LangGraph rule-extraction state machine + prompts + Pydantic models.</td></tr>
+<tr><td class="path">pipeline/ingest/</td><td>Document loaders (PDF/DOCX/TXT) and text chunker.</td></tr>
+<tr><td class="path">pipeline/api/</td><td>FastAPI routes + request/response schemas.</td></tr>
+<tr><td class="path">pipeline/db/</td><td>psycopg2 DB client + callbacks to the wiki's embed endpoints.</td></tr>
+<tr><td class="path">scripts/</td><td>One-off/operational Node/TS scripts: migrations, seeding, embedding backfill/regeneration, narrative generation. Run manually or via <code>scripts/docker-setup.sh</code>.</td></tr>
+<tr><td class="path">scripts/migrations/</td><td>Standalone SQL migration files applied manually before running <code>migrate.ts</code> (2FA, videos, password reset).</td></tr>
+<tr><td class="path">reference/wiki-main/</td><td><b>Visual reference only</b> (per CLAUDE.md) — copy its component/style/layout patterns, never its API, data layer, or pipeline logic.</td></tr>
+<tr><td class="path">public/</td><td>Static assets, incl. <code>uploads/</code> bind-mount target for user-uploaded files.</td></tr>
+<tr><td class="path">middleware.ts</td><td>Central auth/RBAC gate for almost every request. Touch when adding a new protected/public route or role.</td></tr>
+<tr><td class="path">next.config.ts</td><td>Standalone build output, uploads rewrite/cache headers, unoptimized images.</td></tr>
+<tr><td class="path">docker-compose.yml</td><td>Production 3-service deploy (postgres/wiki/pipeline) behind Traefik.</td></tr>
+<tr><td class="path">docker-compose.dev.yml</td><td>Local dev stack incl. local Ollama service, hot-reload wiki + pipeline.</td></tr>
+<tr><td class="path">Dockerfile</td><td>Wiki multi-stage build; also installs the cron job for embedding backfill.</td></tr>
+<tr><td class="path">README.md</td><td>Primary onboarding doc: architecture, deployment steps, roles, ingestion types, known limitations.</td></tr>
+<tr><td class="path">SECURITY_AUDIT.md</td><td>Dated security audit (2026-05-08) with 13 findings; several appear fixed in current code (see §7 callouts).</td></tr>
+<tr><td class="path">AGENTS.md</td><td>Warns this Next.js version has breaking changes — read <code>node_modules/next/dist/docs/</code> before writing code.</td></tr>
+</table>
+
+<h2><span class="num">5</span>Key Files — Read These First</h2>
+
+<div class="keyfile">
+<div class="kf-path">middleware.ts</div>
+<p>Gatekeeper for the entire app. Defines <code>PUBLIC_PATHS</code>, <code>ADMIN_PATHS</code>, <code>VALIDATOR_PATHS</code>; validates the
+<code>wiki_session</code> cookie by calling internal <code>/api/auth/me</code>; injects <code>x-user-id/email/role</code> headers.
+<div class="kf-breaks">Breaks if changed carelessly: get a path wrong here and you either lock everyone out or expose a route with zero auth.</div></p>
+</div>
+
+<div class="keyfile">
+<div class="kf-path">lib/auth.ts</div>
+<p>All auth primitives: password hash/verify, TOTP generate/verify, session create/validate/delete, temp-token flow, email 2FA, password reset.
+<div class="kf-breaks">Breaks if changed: session validation, login, 2FA, and password reset all depend on this file directly.</div></p>
+</div>
+
+<div class="keyfile">
+<div class="kf-path">lib/db.ts</div>
+<p><code>pg.Pool</code> singleton + core query helpers (<code>getAllWorkflowsWithStats</code>, <code>getUserCompanyIds</code>, etc.) used across nearly every route.
+<div class="kf-breaks">Breaks if changed: connection config or helper signature changes ripple into most <code>app/api/</code> routes.</div></p>
+</div>
+
+<div class="keyfile">
+<div class="kf-path">lib/ollama.ts</div>
+<p>Single abstraction over local Ollama vs. remote "NaN Builders" LLM API for both chat and embeddings; branches on whether <code>OLLAMA_BASE_URL</code> is remote/has an API key.
+<div class="kf-breaks">Breaks if changed: chat streaming, embeddings, hybrid search relevance, and the backfill script all depend on this.</div></p>
+</div>
+
+<div class="keyfile">
+<div class="kf-path">lib/search.ts</div>
+<p><code>hybridSearch()</code> — merges Postgres full-text search and pgvector KNN across rules/articles/seds via Reciprocal Rank Fusion. Powers <code>/api/search</code> and the search page.
+<div class="kf-breaks">Breaks if changed: search result ranking/coverage; silently degrades to FTS-only if the embed call fails.</div></p>
+</div>
+
+<div class="keyfile">
+<div class="kf-path">scripts/migrate.ts</div>
+<p>Canonical schema definition (idempotent <code>CREATE TABLE IF NOT EXISTS</code>/<code>ADD COLUMN IF NOT EXISTS</code>) plus seed data for companies/platforms/categories.
+<div class="kf-breaks">Breaks if changed: this IS the schema — there's no separate ORM/migration framework. Miss a column here and the app 500s at runtime.</div></p>
+</div>
+
+<div class="keyfile">
+<div class="kf-path">pipeline/api/routes.py</div>
+<p>796-line FastAPI route file: <code>/ingest</code>, <code>/ingest/text</code>, <code>/ingest/sed</code>, HTML conversion, SED field extraction (<code>extract_sed_data</code>).
+<div class="kf-breaks">Breaks if changed: all document ingestion (rules, articles, SEDs) flows through this one file.</div></p>
+</div>
+
+<div class="keyfile">
+<div class="kf-path">pipeline/extract/pipeline.py</div>
+<p>LangGraph state machine: extract-from-chunk (looped) → deduplicate → write-to-db. Talks to the LLM directly via <code>httpx</code>, not the OpenAI SDK.
+<div class="kf-breaks">Breaks if changed: rule extraction quality/dedup and what actually lands in the <code>rules</code> table.</div></p>
+</div>
+
+<div class="keyfile">
+<div class="kf-path">pipeline/db/client.py</div>
+<p>Raw psycopg2 client: workflow/rule/article/SED inserts, all paired with explicit <code>audit_log</code> writes, plus the callbacks that trigger embedding generation on the wiki side.
+<div class="kf-breaks">Breaks if changed: SOX audit trail integrity from the pipeline side, and the embed-callback chain (miss it → row has no embedding, invisible to semantic search).</div></p>
+</div>
+
+<h2><span class="num">6</span>Entry Points</h2>
+<table>
+<tr><th>Entry point</th><th>Detail</th></tr>
+<tr><td>App start (wiki)</td><td><code class="path">docker-entrypoint.sh</code> starts <code>crond</code> then <code>exec node server.js</code> (Next.js standalone output).</td></tr>
+<tr><td>App start (pipeline)</td><td><code>uvicorn</code> serving <code class="path">pipeline/main.py</code>'s FastAPI <code>app</code>.</td></tr>
+<tr><td>First HTTP touchpoint</td><td>Every request except static assets passes through <code class="path">middleware.ts</code> before reaching a page or API route.</td></tr>
+<tr><td>Data first enters system</td><td>File upload from <code class="path">app/upload/page.tsx</code> → one of <code>app/api/upload/*</code> or <code>app/api/seds/upload</code> → forwarded to pipeline <code>POST /ingest*</code>.</td></tr>
+<tr><td>User-facing home</td><td><code class="path">app/page.tsx</code>.</td></tr>
+<tr><td>Login flow start</td><td><code class="path">app/login/page.tsx</code> → <code>POST /api/auth/login</code>.</td></tr>
+</table>
+
+<h3>API Route Inventory (app/api/)</h3>
+<table>
+<tr><th>Route</th><th>Method</th><th>Purpose</th></tr>
+<tr><td class="path">auth/login</td><td><span class="badge b-post">POST</span></td><td>Rate-limited (10/min/IP) credential check, starts login flow.</td></tr>
+<tr><td class="path">auth/logout</td><td><span class="badge b-post">POST</span></td><td>Deletes session, clears cookies.</td></tr>
+<tr><td class="path">auth/me</td><td><span class="badge b-get">GET</span></td><td>Validates session; called internally by middleware for every request.</td></tr>
+<tr><td class="path">auth/change-password</td><td><span class="badge b-post">POST</span></td><td>Requires session; strength-checked password update.</td></tr>
+<tr><td class="path">auth/forgot-password</td><td><span class="badge b-post">POST</span></td><td>Rate-limited, emails reset link; always returns ok (anti-enumeration).</td></tr>
+<tr><td class="path">auth/reset-password</td><td><span class="badge b-post">POST</span></td><td>Consumes reset token, sets new password.</td></tr>
+<tr><td class="path">auth/send-email-code</td><td><span class="badge b-post">POST</span></td><td>Sends 6-digit email 2FA code.</td></tr>
+<tr><td class="path">auth/set-2fa-method</td><td><span class="badge b-post">POST</span></td><td>Chooses TOTP vs. email 2FA.</td></tr>
+<tr><td class="path">auth/setup-2fa</td><td><span class="badge b-get">GET</span></td><td>Generates/returns TOTP secret + QR.</td></tr>
+<tr><td class="path">auth/verify-email-code</td><td><span class="badge b-post">POST</span></td><td>Rate-limited email code verify → creates session.</td></tr>
+<tr><td class="path">auth/verify-totp</td><td><span class="badge b-post">POST</span></td><td>Rate-limited TOTP verify → creates session.</td></tr>
+<tr><td class="path">admin/categories</td><td><span class="badge b-get">GET</span>/<span class="badge b-post">POST</span></td><td>Manage per-platform document categories.</td></tr>
+<tr><td class="path">admin/categories/[id]</td><td><span class="badge b-patch">PATCH</span></td><td>Edit a category.</td></tr>
+<tr><td class="path">admin/platforms</td><td><span class="badge b-get">GET</span>/<span class="badge b-post">POST</span></td><td>Manage platforms.</td></tr>
+<tr><td class="path">admin/platforms/[id]</td><td><span class="badge b-patch">PATCH</span></td><td>Edit a platform; audit-logged.</td></tr>
+<tr><td class="path">admin/seds</td><td><span class="badge b-delete">DELETE</span></td><td>Admin-only bulk delete of ALL SEDs (transaction, single audit_log row).</td></tr>
+<tr><td class="path">admin/users</td><td><span class="badge b-get">GET</span>/<span class="badge b-post">POST</span></td><td>List/create users (company_admin scoped to own companies).</td></tr>
+<tr><td class="path">admin/users/[id]</td><td><span class="badge b-patch">PATCH</span>/<span class="badge b-delete">DELETE</span></td><td>Change role/reset 2FA; delete user (self-delete guarded).</td></tr>
+<tr><td class="path">admin/users/[id]/companies</td><td><span class="badge b-get">GET</span></td><td>User's company IDs.</td></tr>
+<tr><td class="path">admin/users/[id]/platforms</td><td><span class="badge b-get">GET</span></td><td>User's platform IDs.</td></tr>
+<tr><td class="path">admin/videos</td><td><span class="badge b-get">GET</span></td><td>List all videos (admin/developer).</td></tr>
+<tr><td class="path">articles</td><td><span class="badge b-get">GET</span></td><td>List, filterable by <code>unvalidated=1</code> + company access.</td></tr>
+<tr><td class="path">articles/[id]</td><td><span class="badge b-get">GET</span></td><td>Single article w/ company join.</td></tr>
+<tr><td class="path">articles/[id]/validate</td><td><span class="badge b-post">POST</span></td><td>Marks article stakeholder-validated; audit-logged.</td></tr>
+<tr><td class="path">articles/embed</td><td><span class="badge b-post">POST</span></td><td><i>(public)</i> Embeds article text; called by pipeline.</td></tr>
+<tr><td class="path">audit</td><td><span class="badge b-get">GET</span></td><td>Admin/developer paginated audit log query.</td></tr>
+<tr><td class="path">chat</td><td><span class="badge b-get">GET</span>/<span class="badge b-post">POST</span></td><td>AI assistant; prompt-injection blocklist; streams via <code class="path">lib/ollama.ts</code>.</td></tr>
+<tr><td class="path">companies</td><td><span class="badge b-get">GET</span>/<span class="badge b-post">POST</span></td><td>List companies (+synthetic "All/Corporate"); create (super_admin).</td></tr>
+<tr><td class="path">companies/user</td><td><span class="badge b-get">GET</span></td><td>Current user's companies.</td></tr>
+<tr><td class="path">departments</td><td><span class="badge b-get">GET</span></td><td>Distinct departments across all content types.</td></tr>
+<tr><td class="path">embed</td><td><span class="badge b-post">POST</span></td><td><i>(public)</i> Embeds a rule; called by pipeline.</td></tr>
+<tr><td class="path">experts</td><td><span class="badge b-get">GET</span></td><td>SME experts ordered by risk level.</td></tr>
+<tr><td class="path">flag</td><td><span class="badge b-post">POST</span></td><td>Flags a rule/workflow gap.</td></tr>
+<tr><td class="path">gaps</td><td><span class="badge b-get">GET</span></td><td>Open gaps joined w/ workflow + owner.</td></tr>
+<tr><td class="path">nav</td><td><span class="badge b-get">GET</span></td><td><i>(public)</i> Sidebar nav grouped by department, company-filtered.</td></tr>
+<tr><td class="path">platforms/user</td><td><span class="badge b-get">GET</span></td><td>Current user's accessible platforms.</td></tr>
+<tr><td class="path">rules/[id]</td><td><span class="badge b-delete">DELETE</span></td><td>Editor/admin/developer only.</td></tr>
+<tr><td class="path">search</td><td><span class="badge b-get">GET</span></td><td><i>(public per middleware, but session-validated in code)</i> hybridSearch, company-filtered.</td></tr>
+<tr><td class="path">seds</td><td><span class="badge b-get">GET</span></td><td>List, company-filtered.</td></tr>
+<tr><td class="path">seds/[id]</td><td><span class="badge b-get">GET</span></td><td>Full structured SED fields.</td></tr>
+<tr><td class="path">seds/[id]/embed</td><td><span class="badge b-post">POST</span></td><td>Internal embed endpoint for a SED.</td></tr>
+<tr><td class="path">seds/search</td><td><span class="badge b-post">POST</span></td><td>Semantic SED search (min 20-char query).</td></tr>
+<tr><td class="path">seds/search-stream</td><td><span class="badge b-post">POST</span></td><td>Same, streamed NDJSON status events.</td></tr>
+<tr><td class="path">seds/upload</td><td><span class="badge b-post">POST</span></td><td>Editor+; forwards to pipeline <code>/ingest/sed</code>.</td></tr>
+<tr><td class="path">upload/article</td><td><span class="badge b-post">POST</span></td><td>Editor+; forwards to pipeline w/ title/dept/company metadata.</td></tr>
+<tr><td class="path">upload/process</td><td><span class="badge b-post">POST</span></td><td>Editor+; forwards to pipeline <code>/ingest</code> (rule extraction).</td></tr>
+<tr><td class="path">upload/sed</td><td><span class="badge b-post">POST</span></td><td>Editor+; forwards to pipeline <code>/ingest/sed</code>.</td></tr>
+<tr><td class="path">upload/video</td><td><span class="badge b-post">POST</span></td><td>Editor+; <b>calls LLM directly from Next.js</b> (bypasses pipeline) using <code class="path">lib/vtt.ts</code>.</td></tr>
+<tr><td class="path">uploads/[...path]</td><td><span class="badge b-get">GET</span></td><td>Serves uploaded files; path-traversal checked; <code>private, no-store</code>.</td></tr>
+<tr><td class="path">validate</td><td><span class="badge b-post">POST</span></td><td>Marks a rule validated with a note.</td></tr>
+<tr><td class="path">validate/pending</td><td><span class="badge b-get">GET</span></td><td>Lists unvalidated rules.</td></tr>
+<tr><td class="path">videos</td><td><span class="badge b-get">GET</span></td><td>List videos.</td></tr>
+<tr><td class="path">videos/[id]</td><td><span class="badge b-delete">DELETE</span></td><td>Editor+; deletes + audit-logs.</td></tr>
+<tr><td class="path">videos/[id]/validate</td><td><span class="badge b-post">POST</span></td><td>Marks video validated.</td></tr>
+<tr><td class="path">workflows</td><td><span class="badge b-get">GET</span></td><td>All workflows with stats, company-filtered.</td></tr>
+<tr><td class="path">workflows/[id]</td><td><span class="badge b-delete">DELETE</span></td><td>Editor/admin; blocked if workflow still has rules.</td></tr>
+<tr><td class="path">workflows/[id]/narrative</td><td><span class="badge b-patch">PATCH</span></td><td>Updates narrative text — <b>no visible auth/audit check</b> (see §7).</td></tr>
+<tr><td class="path">workflows/[id]/generate-narrative</td><td><span class="badge b-post">POST</span></td><td>Uses OpenAI SDK directly with a large prompt template.</td></tr>
+</table>
+
+<h2><span class="num">7</span>Non-Obvious Patterns</h2>
+
+<div class="callout">
+<b>Auditing is app-code-only, not DB-enforced.</b> DB triggers for <code>audit_log</code> were deliberately dropped (per <code class="path">scripts/migrate.ts</code> comments); every INSERT/UPDATE/DELETE on audited tables must explicitly call an audit-log insert in TypeScript or Python. A route that forgets this silently breaks the SOX trail — <code class="path">app/api/workflows/[id]/narrative/route.ts</code> (PATCH) appears to have no audit_log write and no visible auth check.
+</div>
+
+<div class="callout">
+<b>Embeddings are 4096-dim and unindexed.</b> Originally <code>vector(768)</code>, migrated in-place to <code>vector(4096)</code> (existing embeddings nulled since dims are incompatible). pgvector's ivfflat/hnsw indexes cap at 2000 dims, so no ANN index exists — vector search is exact brute-force KNN. This is a stated tradeoff in the migration script itself, worth knowing before assuming search is O(log n).
+</div>
+
+<div class="callout">
+<b>Rate limiting is in-memory, per-process.</b> Login/2FA/forgot-password rate limiters use plain JS <code>Map</code>s in each route file — they reset on every deploy/restart and don't share state across horizontally scaled replicas. Effective for a single-container deploy only.
+</div>
+
+<div class="callout warn">
+<b>Possible residual cache-header conflict on uploads.</b> <code class="path">next.config.ts</code>'s <code>headers()</code> still sets <code>Cache-Control: public, max-age=31536000</code> on <code>/uploads/:path*</code>, while <code class="path">app/api/uploads/[...path]/route.ts</code> sets <code>private, no-store</code>. Which one wins wasn't verified — worth checking directly if upload confidentiality matters (SOX documents).
+</div>
+
+<div class="callout warn">
+<b>Pipeline dependency pin may leave a HIGH CVE open.</b> <code class="path">pipeline/requirements.txt</code> pins <code>fastapi==0.115.0</code>, below the security audit's recommended <code>fastapi&gt;=0.115.6</code>/<code>starlette&gt;=0.40.0</code> fix for the authz-bypass finding — unconfirmed whether the transitively installed starlette version is actually patched.
+</div>
+
+<div class="callout">
+<b>Two parallel auth-check styles coexist.</b> <code class="path">middleware.ts</code> injects <code>x-user-id/email/role</code> headers after validating the session, but most route handlers <i>also</i> independently re-validate the <code>wiki_session</code> cookie via <code class="path">lib/auth.ts</code> <code>validateSession()</code> rather than trusting the headers alone (this was a fix applied per the security audit). A few admin routes still redundantly check both.
+</div>
+
+<div class="callout">
+<b>Role checks are ad-hoc per-route, not centralized.</b> Arrays like <code>["editor","admin","developer"]</code> are repeated inline across many <code class="path">app/api/*/route.ts</code> files rather than defined once as a shared constant/helper — easy to accidentally omit a role in one route and not another.
+</div>
+
+<div class="callout">
+<b>Video guides bypass the Python pipeline entirely.</b> Unlike every other content type, <code class="path">app/api/upload/video/route.ts</code> calls the LLM's chat-completions endpoint directly from Next.js (using <code class="path">lib/vtt.ts</code> to parse WebVTT transcripts) instead of forwarding to FastAPI. If you're debugging video ingestion, don't look in <code class="path">pipeline/</code> — look here.
+</div>
+
+<div class="callout">
+<b>Multi-tenancy is filter-based, not row-level-security.</b> Company scoping (<code>company_id</code>, <code>is_corporate</code>, <code>user_companies</code>) is enforced by adding <code>WHERE</code> clauses in application queries (<code>getUserCompanyIds</code> in <code class="path">lib/db.ts</code>) — bypassed entirely for admin/super_admin/developer roles. There is no Postgres RLS backstop; a query that forgets the filter will leak cross-company data.
+</div>
+
+<div class="callout">
+<b>Two-step login flow uses a separate short-lived cookie.</b> Between password verification and 2FA completion, a <code>wiki_temp</code> cookie (5-min expiry, <code>temp_tokens</code> table) tracks in-progress login state — distinct from the final 8-hour <code>wiki_session</code> cookie. Relevant when debugging "stuck on 2FA" issues.
+</div>
+
+<p class="section-note">Generated from a full read of README.md, SECURITY_AUDIT.md, AGENTS.md, all top-level configs, the complete <code>app/api/</code> tree, <code>lib/</code>, <code>pipeline/</code>, <code>scripts/</code>, and the schema defined in <code>scripts/migrate.ts</code> plus <code>scripts/migrations/*.sql</code>. Items marked "unclear from code — review manually" in the underlying research were omitted or flagged above rather than guessed.</p>
+
+</body>
+</html>

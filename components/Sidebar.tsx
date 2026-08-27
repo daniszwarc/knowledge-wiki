@@ -551,6 +551,9 @@ export function Sidebar({
             + Add document
           </a>
         )}
+        <p style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: "0.07em", textTransform: "uppercase", margin: "0 0 4px" }}>
+          Workspace
+        </p>
         <a href="/experts" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
           Subject matter experts
         </a>
@@ -560,6 +563,14 @@ export function Sidebar({
         <a href="/gaps" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
           Flagged gaps
         </a>
+        {(me?.role === "admin" || me?.role === "developer") && (
+          <div style={{ borderTop: "0.5px solid var(--border)", margin: "10px 0 8px" }} />
+        )}
+        {(me?.role === "admin" || me?.role === "developer") && (
+          <p style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: "0.07em", textTransform: "uppercase", margin: "0 0 4px" }}>
+            Administration
+          </p>
+        )}
         {me?.role === "admin" && (
           <a href="/admin/users" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
             Admin
