@@ -554,17 +554,17 @@ export function Sidebar({
         <p style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: "0.07em", textTransform: "uppercase", margin: "0 0 4px" }}>
           Workspace
         </p>
-        <a href="/experts" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
+        <a href="/experts" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0 3px 10px" }}>
           Subject matter experts
         </a>
-        <a href="/validate" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
+        <a href="/validate" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0 3px 10px" }}>
           Validation review
         </a>
-        <a href="/gaps" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
+        <a href="/gaps" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0 3px 10px" }}>
           Flagged gaps
         </a>
         {(me?.role === "admin" || me?.role === "developer") && (
-          <div style={{ borderTop: "0.5px solid var(--border)", margin: "10px 0 8px" }} />
+          <div style={{ borderTop: "1px solid var(--sidebar-border)", margin: "10px 0 8px" }} />
         )}
         {(me?.role === "admin" || me?.role === "developer") && (
           <p style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: "0.07em", textTransform: "uppercase", margin: "0 0 4px" }}>
@@ -572,17 +572,17 @@ export function Sidebar({
           </p>
         )}
         {me?.role === "admin" && (
-          <a href="/admin/users" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
+          <a href="/admin/users" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0 3px 10px" }}>
             Admin
           </a>
         )}
         {me?.role === "admin" && (
-          <a href="/admin/seds" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
+          <a href="/admin/seds" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0 3px 10px" }}>
             SED management
           </a>
         )}
         {(me?.role === "admin" || me?.role === "developer") && (
-          <a href="/audit" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0" }}>
+          <a href="/audit" style={{ display: "block", fontSize: 11, color: "var(--muted)", textDecoration: "none", padding: "3px 0 3px 10px" }}>
             Audit Log
           </a>
         )}
