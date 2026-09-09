@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import OpenAI from "openai";
+import { getBaseUrl, isAzureGateway } from "@/lib/ollama";
 
 const NARRATIVE_PROMPT = `You are a business process documentation specialist.
 Write a clear, professional explanation of this business process for internal staff.
@@ -88,18 +89,40 @@ export async function POST(
       .replace("{department}", workflow.department)
       .replace("{rules_formatted}", rulesFormatted);
 
-    const client = new OpenAI({
-      baseURL: process.env.OLLAMA_BASE_URL ?? "http://localhost:11434/v1",
-      apiKey: "ollama",
-    });
+    const baseUrl = getBaseUrl();
+    let narrative: string;
 
-    const completion = await client.chat.completions.create({
-      model: process.env.OLLAMA_CHAT_MODEL ?? "llama3.2",
-      messages: [{ role: "user", content: prompt }],
-      stream: false,
-    });
+    if (isAzureGateway(baseUrl)) {
+      const apiKey = process.env.LLM_API_KEY ?? "";
+      const res = await fetch(`${baseUrl}/v1/responses`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "api-key": apiKey,
+        },
+        body: JSON.stringify({
+          model: process.env.OLLAMA_CHAT_MODEL ?? "apiwiki-luna",
+          input: [{ role: "user", content: prompt }],
+          stream: false,
+        }),
+      });
+      if (!res.ok) throw new Error(`Narrative generation failed: ${res.status} ${await res.text()}`);
+      const data = await res.json();
+      narrative = data.output_text ?? "";
+    } else {
+      const client = new OpenAI({
+        baseURL: baseUrl + "/v1",
+        apiKey: "ollama",
+      });
 
-    const narrative = completion.choices[0]?.message?.content ?? "";
+      const completion = await client.chat.completions.create({
+        model: process.env.OLLAMA_CHAT_MODEL ?? "llama3.2",
+        messages: [{ role: "user", content: prompt }],
+        stream: false,
+      });
+
+      narrative = completion.choices[0]?.message?.content ?? "";
+    }
 
     await query(
       `UPDATE workflows SET process_narrative = $1, narrative_generated_at = now() WHERE id = $2`,
