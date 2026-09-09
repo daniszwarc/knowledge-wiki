@@ -1,37 +1,9 @@
 import { Pool } from 'pg';
 import * as dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
+import { embed } from '../lib/ollama';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-
-async function embedText(text: string): Promise<number[]> {
-  const baseUrl = (process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434').replace(/\/v1$/, '');
-  const model = process.env.OLLAMA_EMBED_MODEL ?? 'nomic-embed-text';
-  const apiKey = process.env.LLM_API_KEY ?? 'ollama';
-  const isRemote = apiKey !== 'ollama' && !baseUrl.includes('localhost');
-
-  if (isRemote) {
-    const res = await fetch(`${baseUrl}/v1/embeddings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, input: [text], encoding_format: 'float' }),
-    });
-    if (!res.ok) throw new Error(`Embed failed: ${res.status} ${await res.text()}`);
-    const data = await res.json();
-    return data.data[0].embedding;
-  } else {
-    const res = await fetch(`${baseUrl}/api/embed`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, input: text }),
-    });
-    if (!res.ok) throw new Error(`Embed failed: ${res.status} ${await res.text()}`);
-    const data = await res.json();
-    const vector = data.embeddings?.[0] ?? data.embedding;
-    if (!vector || vector.length === 0) throw new Error('Empty embedding returned');
-    return vector;
-  }
-}
 
 function delay(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -56,7 +28,7 @@ async function backfill() {
     const text = [rule.summary, rule.detail].filter(Boolean).join(' ');
     const idShort = rule.id.substring(0, 8);
     try {
-      const vector = await embedText(text);
+      const vector = await embed(text);
       const literal = `[${vector.join(',')}]`;
       await pool.query(
         'UPDATE rules SET embedding = $1::vector, updated_at = now() WHERE id = $2',
@@ -82,7 +54,7 @@ async function backfill() {
     const text = `${article.title} ${article.content.substring(0, 1000)}`;
     const idShort = article.id.substring(0, 8);
     try {
-      const vector = await embedText(text);
+      const vector = await embed(text);
       const literal = `[${vector.join(',')}]`;
       await pool.query(
         'UPDATE articles SET embedding = $1::vector WHERE id = $2',
@@ -113,7 +85,7 @@ async function backfill() {
       .substring(0, 2000);
     const idShort = sed.id.substring(0, 8);
     try {
-      const vector = await embedText(text);
+      const vector = await embed(text);
       const literal = `[${vector.join(',')}]`;
       await pool.query(
         'UPDATE seds SET embedding = $1::vector WHERE id = $2',
