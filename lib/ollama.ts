@@ -26,6 +26,12 @@ export async function chat(
   if (isAzureGateway(baseUrl)) {
     // Azure OpenAI Responses API: different endpoint, request, and stream event shape
     const apiKey = process.env.LLM_API_KEY ?? "";
+    console.log("[ollama.chat] azure branch", {
+      baseUrl,
+      isAzure: isAzureGateway(baseUrl),
+      apiKeyPresent: apiKey.length > 0,
+      apiKeyLength: apiKey.length,
+    });
     const input = [{ role: "system", content: systemPrompt }, ...messages];
 
     const res = await fetch(`${baseUrl}/v1/responses`, {
