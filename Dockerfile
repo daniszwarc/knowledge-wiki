@@ -13,6 +13,7 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/lib ./lib
 RUN mkdir -p /var/spool/cron/crontabs && \
     echo "*/15 * * * * cd /app && npx tsx scripts/backfill-embeddings.ts >> /var/log/backfill.log 2>&1" \
     > /var/spool/cron/crontabs/root && \
