@@ -389,26 +389,64 @@ async function migrate() {
     // Clear existing articles
     await client.query(`DELETE FROM articles`);
 
-    // Migrate embedding columns from vector(768) to vector(4096)
-    // Clear embeddings first — 768-dim vectors are incompatible with 4096-dim
+    // Migrate embedding columns from vector(4096) to vector(1536)
+    // Clear embeddings first — 4096-dim vectors are incompatible with 1536-dim
     await client.query(`UPDATE rules SET embedding = NULL`);
     await client.query(`UPDATE articles SET embedding = NULL`);
     await client.query(`UPDATE seds SET embedding = NULL`);
+    await client.query(`UPDATE videos SET embedding = NULL`);
 
     // Drop existing ivfflat indexes before altering column type
-    // (ivfflat and hnsw both cap at 2000 dims — indexes are skipped for 4096-dim vectors;
-    //  searches use exact KNN which is accurate but O(n). Re-add indexes if you upgrade
-    //  to a pgvector build that supports >2000 dimensions.)
+    // (no-op today since 4096-dim columns had no ANN index, but kept for safety)
     await client.query(`DROP INDEX IF EXISTS rules_embedding_idx`);
     await client.query(`DROP INDEX IF EXISTS articles_embedding_idx`);
     await client.query(`DROP INDEX IF EXISTS seds_embedding_idx`);
+    await client.query(`DROP INDEX IF EXISTS videos_embedding_idx`);
 
-    // Alter column types to 4096 dimensions
-    await client.query(`ALTER TABLE rules ALTER COLUMN embedding TYPE vector(4096)`);
-    await client.query(`ALTER TABLE articles ALTER COLUMN embedding TYPE vector(4096)`);
-    await client.query(`ALTER TABLE seds ALTER COLUMN embedding TYPE vector(4096)`);
+    // Alter column types to 1536 dimensions
+    await client.query(`ALTER TABLE rules ALTER COLUMN embedding TYPE vector(1536)`);
+    await client.query(`ALTER TABLE articles ALTER COLUMN embedding TYPE vector(1536)`);
+    await client.query(`ALTER TABLE seds ALTER COLUMN embedding TYPE vector(1536)`);
+    await client.query(`ALTER TABLE videos ALTER COLUMN embedding TYPE vector(1536)`);
 
-    console.log("Embedding columns migrated to vector(4096) — no ANN indexes (pgvector ivfflat/hnsw cap at 2000 dims)");
+    // 1536 dims is under the ivfflat/hnsw 2000-dim cap — re-add ANN indexes
+    await client.query(`SAVEPOINT before_rules_idx_1536`);
+    try {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS rules_embedding_idx
+        ON rules USING ivfflat (embedding vector_cosine_ops)
+        WITH (lists = 100)
+      `);
+    } catch { await client.query(`ROLLBACK TO SAVEPOINT before_rules_idx_1536`); }
+
+    await client.query(`SAVEPOINT before_articles_idx_1536`);
+    try {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS articles_embedding_idx
+        ON articles USING ivfflat (embedding vector_cosine_ops)
+        WITH (lists = 100)
+      `);
+    } catch { await client.query(`ROLLBACK TO SAVEPOINT before_articles_idx_1536`); }
+
+    await client.query(`SAVEPOINT before_seds_idx_1536`);
+    try {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS seds_embedding_idx
+        ON seds USING ivfflat (embedding vector_cosine_ops)
+        WITH (lists = 100)
+      `);
+    } catch { await client.query(`ROLLBACK TO SAVEPOINT before_seds_idx_1536`); }
+
+    await client.query(`SAVEPOINT before_videos_idx_1536`);
+    try {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS videos_embedding_idx
+        ON videos USING ivfflat (embedding vector_cosine_ops)
+        WITH (lists = 100)
+      `);
+    } catch { await client.query(`ROLLBACK TO SAVEPOINT before_videos_idx_1536`); }
+
+    console.log("Embedding columns migrated to vector(1536) with ivfflat indexes re-created");
 
     // Platforms table
     await client.query(`

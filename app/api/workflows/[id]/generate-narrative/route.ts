@@ -92,13 +92,6 @@ export async function POST(
     const baseUrl = getBaseUrl();
     let narrative: string;
 
-    console.log("[generate-narrative] llm config", {
-      baseUrl,
-      isAzure: isAzureGateway(baseUrl),
-      apiKeyPresent: (process.env.LLM_API_KEY ?? "").length > 0,
-      apiKeyLength: (process.env.LLM_API_KEY ?? "").length,
-    });
-
     if (isAzureGateway(baseUrl)) {
       const apiKey = process.env.LLM_API_KEY ?? "";
       const res = await fetch(`${baseUrl}/v1/responses`, {
