@@ -23,6 +23,16 @@ interface JevResponse {
 }
 
 export async function POST(req: NextRequest) {
+  const redactedHeaders: Record<string, string> = {};
+  req.headers.forEach((value, key) => {
+    redactedHeaders[key] = key.toLowerCase() === "cookie" ? `[present, ${value.length} chars]` : value;
+  });
+  console.log("[classify] incoming request", {
+    method: req.method,
+    url: req.url,
+    headers: redactedHeaders,
+  });
+
   const apiKey = process.env.TYPESAFE_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "TYPESAFE_API_KEY is not configured" }, { status: 500 });
