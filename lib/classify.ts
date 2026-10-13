@@ -1,5 +1,7 @@
 "use server";
 
+import { cookies } from "next/headers";
+
 const PIPELINE_URL = process.env.PIPELINE_URL ?? "http://localhost:8001";
 const INTERNAL_URL = process.env.INTERNAL_URL ?? "http://localhost:3000";
 
@@ -30,9 +32,15 @@ export async function extractTextFromFile(file: File): Promise<string> {
 
 /** Calls /api/classify to get a Jev-based doc type classification. Throws on failure — callers decide the fallback. */
 export async function classifyFile(text: string, filename: string): Promise<ClassifyResult> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("wiki_session")?.value;
+
   const res = await fetch(`${INTERNAL_URL}/api/classify`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { cookie: `wiki_session=${token}` } : {}),
+    },
     body: JSON.stringify({ text, filename }),
   });
   if (!res.ok) {
