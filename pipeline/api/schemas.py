@@ -29,6 +29,12 @@ class IngestResponse(BaseModel):
     workflow_id: Optional[str] = None
 
 
+class ExtractTextResponse(BaseModel):
+    filename: str
+    format: str
+    text: str
+
+
 class HealthResponse(BaseModel):
     status: str
     ollama: bool

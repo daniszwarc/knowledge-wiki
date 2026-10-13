@@ -8,7 +8,7 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter, Form, HTTPException, UploadFile
 
-from api.schemas import HealthResponse, IngestResponse, IngestTextRequest, WorkflowItem
+from api.schemas import ExtractTextResponse, HealthResponse, IngestResponse, IngestTextRequest, WorkflowItem
 from db.client import (
     call_article_embed,
     call_sed_embed,
@@ -262,6 +262,23 @@ def _save_article(
     )
     threading.Thread(target=call_article_embed, args=(article_id, article_content), daemon=True).start()
     return article_id, title
+
+
+@router.post("/extract-text", response_model=ExtractTextResponse)
+async def extract_text(file: UploadFile):
+    """Extract plain text from a document with no DB or disk writes — used for
+    pre-upload classification only. Does not persist anything."""
+    data = await file.read()
+    filename = file.filename or "upload"
+
+    try:
+        doc = load_document(data, filename)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Failed to parse document: {e}")
+
+    return ExtractTextResponse(filename=filename, format=doc.format, text=doc.raw_text[:5000])
 
 
 @router.post("/ingest", response_model=IngestResponse)
