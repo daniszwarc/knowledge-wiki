@@ -13,6 +13,7 @@ interface Category {
   accepted_files: string[];
   form_fields: Record<string, boolean>;
   processing_type: string;
+  multi_upload: boolean;
   created_at: string;
 }
 
@@ -26,7 +27,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { name, description, accepted_files, form_fields, processing_type } = await req.json();
+  const { name, description, accepted_files, form_fields, processing_type, multi_upload } = await req.json();
 
   if (!name?.trim()) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
@@ -40,10 +41,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const rows = await query<Category>(
     `UPDATE categories
-     SET name = $1, description = $2, accepted_files = $3, form_fields = $4, processing_type = $5
-     WHERE id = $6
-     RETURNING id, platform_id, name, description, accepted_files, form_fields, processing_type, created_at`,
-    [name.trim(), description?.trim() || null, accepted_files, JSON.stringify(form_fields ?? {}), processing_type, id]
+     SET name = $1, description = $2, accepted_files = $3, form_fields = $4, processing_type = $5, multi_upload = $6
+     WHERE id = $7
+     RETURNING id, platform_id, name, description, accepted_files, form_fields, processing_type, multi_upload, created_at`,
+    [name.trim(), description?.trim() || null, accepted_files, JSON.stringify(form_fields ?? {}), processing_type, !!multi_upload, id]
   );
   if (rows.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

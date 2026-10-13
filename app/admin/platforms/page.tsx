@@ -17,6 +17,7 @@ interface Category {
   accepted_files: string[];
   form_fields: Record<string, boolean>;
   processing_type: string;
+  multi_upload: boolean;
   created_at: string;
 }
 
@@ -37,6 +38,7 @@ function emptyCategoryForm() {
     accepted_files: [] as string[],
     form_fields: {} as Record<string, boolean>,
     processing_type: "rules",
+    multi_upload: false,
   };
 }
 
@@ -119,6 +121,18 @@ function CategoryForm({
             </label>
           ))}
         </div>
+      </div>
+
+      <div>
+        <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--foreground)", cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={value.multi_upload}
+            onChange={() => onChange({ ...value, multi_upload: !value.multi_upload })}
+            style={{ accentColor: "var(--foreground)" }}
+          />
+          Allow multiple files per upload
+        </label>
       </div>
     </div>
   );
@@ -247,6 +261,7 @@ export default function AdminPlatformsPage() {
       accepted_files: c.accepted_files,
       form_fields: c.form_fields,
       processing_type: c.processing_type,
+      multi_upload: c.multi_upload,
     });
   }
 

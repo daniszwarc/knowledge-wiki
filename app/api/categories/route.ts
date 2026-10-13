@@ -10,6 +10,7 @@ interface Category {
   accepted_files: string[];
   form_fields: Record<string, boolean>;
   processing_type: string;
+  multi_upload: boolean;
 }
 
 export async function GET(req: NextRequest) {
@@ -21,12 +22,12 @@ export async function GET(req: NextRequest) {
   const platformId = req.nextUrl.searchParams.get("platform_id");
   const rows = platformId
     ? await query<Category>(
-        `SELECT id, platform_id, name, description, accepted_files, form_fields, processing_type
+        `SELECT id, platform_id, name, description, accepted_files, form_fields, processing_type, multi_upload
          FROM categories WHERE platform_id = $1 ORDER BY created_at ASC`,
         [platformId]
       )
     : await query<Category>(
-        `SELECT id, platform_id, name, description, accepted_files, form_fields, processing_type
+        `SELECT id, platform_id, name, description, accepted_files, form_fields, processing_type, multi_upload
          FROM categories ORDER BY created_at ASC`
       );
 

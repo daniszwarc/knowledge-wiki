@@ -505,6 +505,9 @@ async function migrate() {
         )
     `);
 
+    // Allow categories to opt into multi-file upload
+    await client.query(`ALTER TABLE categories ADD COLUMN IF NOT EXISTS multi_upload BOOLEAN DEFAULT FALSE`);
+
     await client.query("COMMIT");
     console.log("Migration completed successfully");
   } catch (err) {

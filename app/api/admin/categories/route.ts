@@ -13,6 +13,7 @@ interface Category {
   accepted_files: string[];
   form_fields: Record<string, boolean>;
   processing_type: string;
+  multi_upload: boolean;
   created_at: string;
 }
 
@@ -28,12 +29,12 @@ export async function GET(req: NextRequest) {
   const platformId = req.nextUrl.searchParams.get("platform_id");
   const rows = platformId
     ? await query<Category>(
-        `SELECT id, platform_id, name, description, accepted_files, form_fields, processing_type, created_at
+        `SELECT id, platform_id, name, description, accepted_files, form_fields, processing_type, multi_upload, created_at
          FROM categories WHERE platform_id = $1 ORDER BY created_at ASC`,
         [platformId]
       )
     : await query<Category>(
-        `SELECT id, platform_id, name, description, accepted_files, form_fields, processing_type, created_at
+        `SELECT id, platform_id, name, description, accepted_files, form_fields, processing_type, multi_upload, created_at
          FROM categories ORDER BY created_at ASC`
       );
 
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { platform_id, name, description, accepted_files, form_fields, processing_type } = await req.json();
+  const { platform_id, name, description, accepted_files, form_fields, processing_type, multi_upload } = await req.json();
 
   if (!platform_id || !name?.trim()) {
     return NextResponse.json({ error: "platform_id and name are required" }, { status: 400 });
@@ -62,10 +63,10 @@ export async function POST(req: NextRequest) {
   }
 
   const rows = await query<Category>(
-    `INSERT INTO categories (platform_id, name, description, accepted_files, form_fields, processing_type)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id, platform_id, name, description, accepted_files, form_fields, processing_type, created_at`,
-    [platform_id, name.trim(), description?.trim() || null, accepted_files, JSON.stringify(form_fields ?? {}), processing_type]
+    `INSERT INTO categories (platform_id, name, description, accepted_files, form_fields, processing_type, multi_upload)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, platform_id, name, description, accepted_files, form_fields, processing_type, multi_upload, created_at`,
+    [platform_id, name.trim(), description?.trim() || null, accepted_files, JSON.stringify(form_fields ?? {}), processing_type, !!multi_upload]
   );
 
   await query(

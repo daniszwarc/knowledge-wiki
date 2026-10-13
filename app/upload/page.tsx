@@ -28,6 +28,7 @@ interface Category {
   description: string | null;
   accepted_files: string[];
   processing_type: "rules" | "article" | "sed" | "video" | string;
+  multi_upload: boolean;
 }
 
 type DocType = "rules" | "article" | "sed" | "video";
@@ -42,6 +43,19 @@ interface SFileItem {
   sedId?: string;
   ticketNumber?: string;
   projectTitle?: string;
+}
+
+interface MultiFileItem {
+  id: string;
+  file: File;
+  status: SFileStatus;
+  error?: string;
+  resultId?: string;
+  resultLabel?: string;
+}
+
+function makeFileItem(file: File): MultiFileItem {
+  return { id: `${file.name}-${file.lastModified}-${Math.random()}`, file, status: "pending" };
 }
 
 type UploadResult =
@@ -84,17 +98,19 @@ export default function UploadPage() {
   const selectedType = (selectedCategory?.processing_type as DocType) ?? null;
   const acceptAttr = selectedCategory ? selectedCategory.accepted_files.map((f) => `.${f}`).join(",") : "";
   const acceptLabel = selectedCategory ? selectedCategory.accepted_files.map((f) => f.toUpperCase()).join(" · ") : "";
+  const isMultiUpload = !!selectedCategory?.multi_upload;
 
   // Process form
-  const [pFile, setPFile] = useState<File | null>(null);
+  const [pFiles, setPFiles] = useState<MultiFileItem[]>([]);
   const [pWorkflow, setPWorkflow] = useState("");
   const [pDept, setPDept] = useState("");
   const [pCompany, setPCompany] = useState("all");
   const pFileRef = useRef<HTMLInputElement>(null);
   const [pDragging, setPDragging] = useState(false);
+  const [pSummary, setPSummary] = useState<{ succeeded: number; failed: number } | null>(null);
 
   // Article form
-  const [aFile, setAFile] = useState<File | null>(null);
+  const [aFiles, setAFiles] = useState<MultiFileItem[]>([]);
   const [aTitle, setATitle] = useState("");
   const [aDept, setADept] = useState("");
   const [aWorkflow, setAWorkflow] = useState("");
@@ -102,6 +118,7 @@ export default function UploadPage() {
   const [aCompany, setACompany] = useState("all");
   const aFileRef = useRef<HTMLInputElement>(null);
   const [aDragging, setADragging] = useState(false);
+  const [aSummary, setASummary] = useState<{ succeeded: number; failed: number } | null>(null);
 
   // SED form
   const [sFiles, setSFiles] = useState<SFileItem[]>([]);
@@ -216,37 +233,110 @@ export default function UploadPage() {
       const fd = new FormData();
 
       if (selectedType === "rules") {
-        if (!pFile || !pWorkflow.trim() || !pDept.trim()) return;
-        fd.append("file", pFile);
-        fd.append("workflow_name", pWorkflow.trim());
-        fd.append("department", pDept.trim());
-        appendCompanyFields(fd, pCompany);
-        const res = await fetch("/api/upload/process", { method: "POST", body: fd });
-        if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
-        const json = await res.json();
-        stopProgress(true);
-        localStorage.setItem("lastDepartment", pDept.trim());
-        localStorage.setItem("lastWorkflow", pWorkflow.trim());
-        setResult({ type: "process", workflowId: json.workflow_id, workflowName: json.workflow_name, rulesExtracted: json.rules_extracted, articleId: json.article_id ?? null });
-        window.dispatchEvent(new Event("wiki:content-updated"));
-        router.refresh();
+        if (pFiles.length === 0 || !pWorkflow.trim() || !pDept.trim()) return;
+
+        if (isMultiUpload) {
+          setPSummary(null);
+          let succeeded = 0;
+          let failed = 0;
+
+          for (const item of pFiles) {
+            setPFiles((prev) => prev.map((f) => (f.id === item.id ? { ...f, status: "processing", error: undefined } : f)));
+            try {
+              const pfd = new FormData();
+              pfd.append("file", item.file);
+              pfd.append("workflow_name", pWorkflow.trim());
+              pfd.append("department", pDept.trim());
+              appendCompanyFields(pfd, pCompany);
+              const res = await fetch("/api/upload/process", { method: "POST", body: pfd });
+              if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
+              const json = await res.json();
+              succeeded++;
+              setPFiles((prev) => prev.map((f) => (f.id === item.id
+                ? { ...f, status: "success", resultId: json.workflow_id, resultLabel: json.workflow_name }
+                : f)));
+            } catch (err) {
+              failed++;
+              const message = err instanceof Error ? err.message : "Upload failed";
+              setPFiles((prev) => prev.map((f) => (f.id === item.id ? { ...f, status: "error", error: message } : f)));
+            }
+          }
+
+          stopProgress(true);
+          setPSummary({ succeeded, failed });
+          localStorage.setItem("lastDepartment", pDept.trim());
+          localStorage.setItem("lastWorkflow", pWorkflow.trim());
+          window.dispatchEvent(new Event("wiki:content-updated"));
+          router.refresh();
+        } else {
+          fd.append("file", pFiles[0].file);
+          fd.append("workflow_name", pWorkflow.trim());
+          fd.append("department", pDept.trim());
+          appendCompanyFields(fd, pCompany);
+          const res = await fetch("/api/upload/process", { method: "POST", body: fd });
+          if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
+          const json = await res.json();
+          stopProgress(true);
+          localStorage.setItem("lastDepartment", pDept.trim());
+          localStorage.setItem("lastWorkflow", pWorkflow.trim());
+          setResult({ type: "process", workflowId: json.workflow_id, workflowName: json.workflow_name, rulesExtracted: json.rules_extracted, articleId: json.article_id ?? null });
+          window.dispatchEvent(new Event("wiki:content-updated"));
+          router.refresh();
+        }
 
       } else if (selectedType === "article") {
-        if (!aFile || !aTitle.trim() || !aDept.trim() || aAppearsAs.size === 0) return;
-        fd.append("file", aFile);
-        fd.append("title", aTitle.trim());
-        fd.append("department", aDept.trim());
-        if (aWorkflow.trim()) fd.append("workflow_name", aWorkflow.trim());
-        fd.append("appears_as", Array.from(aAppearsAs).join(","));
-        appendCompanyFields(fd, aCompany);
-        const res = await fetch("/api/upload/article", { method: "POST", body: fd });
-        if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
-        const json = await res.json();
-        stopProgress(true);
-        localStorage.setItem("lastDepartment", aDept.trim());
-        setResult({ type: "article", articleId: json.article_id, title: json.title });
-        window.dispatchEvent(new Event("wiki:content-updated"));
-        router.refresh();
+        if (aFiles.length === 0 || !aTitle.trim() || !aDept.trim() || aAppearsAs.size === 0) return;
+
+        if (isMultiUpload) {
+          setASummary(null);
+          let succeeded = 0;
+          let failed = 0;
+
+          for (const item of aFiles) {
+            setAFiles((prev) => prev.map((f) => (f.id === item.id ? { ...f, status: "processing", error: undefined } : f)));
+            try {
+              const afd = new FormData();
+              afd.append("file", item.file);
+              afd.append("title", aTitle.trim());
+              afd.append("department", aDept.trim());
+              if (aWorkflow.trim()) afd.append("workflow_name", aWorkflow.trim());
+              afd.append("appears_as", Array.from(aAppearsAs).join(","));
+              appendCompanyFields(afd, aCompany);
+              const res = await fetch("/api/upload/article", { method: "POST", body: afd });
+              if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
+              const json = await res.json();
+              succeeded++;
+              setAFiles((prev) => prev.map((f) => (f.id === item.id
+                ? { ...f, status: "success", resultId: json.article_id, resultLabel: json.title }
+                : f)));
+            } catch (err) {
+              failed++;
+              const message = err instanceof Error ? err.message : "Upload failed";
+              setAFiles((prev) => prev.map((f) => (f.id === item.id ? { ...f, status: "error", error: message } : f)));
+            }
+          }
+
+          stopProgress(true);
+          setASummary({ succeeded, failed });
+          localStorage.setItem("lastDepartment", aDept.trim());
+          window.dispatchEvent(new Event("wiki:content-updated"));
+          router.refresh();
+        } else {
+          fd.append("file", aFiles[0].file);
+          fd.append("title", aTitle.trim());
+          fd.append("department", aDept.trim());
+          if (aWorkflow.trim()) fd.append("workflow_name", aWorkflow.trim());
+          fd.append("appears_as", Array.from(aAppearsAs).join(","));
+          appendCompanyFields(fd, aCompany);
+          const res = await fetch("/api/upload/article", { method: "POST", body: fd });
+          if (!res.ok) throw new Error((await res.json()).error ?? "Upload failed");
+          const json = await res.json();
+          stopProgress(true);
+          localStorage.setItem("lastDepartment", aDept.trim());
+          setResult({ type: "article", articleId: json.article_id, title: json.title });
+          window.dispatchEvent(new Event("wiki:content-updated"));
+          router.refresh();
+        }
 
       } else if (selectedType === "sed") {
         if (sFiles.length === 0) return;
@@ -307,8 +397,8 @@ export default function UploadPage() {
   function isDisabled(): boolean {
     if (loading) return true;
     if (!selectedCategory) return true;
-    if (selectedType === "rules") return !pFile || !pWorkflow.trim() || !pDept.trim();
-    if (selectedType === "article") return !aFile || !aTitle.trim() || !aDept.trim() || aAppearsAs.size === 0;
+    if (selectedType === "rules") return pFiles.length === 0 || !pWorkflow.trim() || !pDept.trim();
+    if (selectedType === "article") return aFiles.length === 0 || !aTitle.trim() || !aDept.trim() || aAppearsAs.size === 0;
     if (selectedType === "video") return !vFile || !vTitle.trim() || !vDept.trim() || !vEmbedUrl.trim();
     return sFiles.length === 0;
   }
@@ -337,6 +427,52 @@ export default function UploadPage() {
     marginBottom: 14,
     boxSizing: "border-box",
   };
+
+  function MultiFileList({ items, summary }: { items: MultiFileItem[]; summary: { succeeded: number; failed: number } | null }) {
+    if (items.length === 0) return null;
+    return (
+      <>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+          {items.map((f) => (
+            <div
+              key={f.id}
+              style={{
+                display: "flex", flexDirection: "column", gap: 2,
+                fontSize: 12, padding: "6px 10px", borderRadius: 6,
+                border: "1px solid var(--card-border)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ color: "var(--foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {f.file.name}
+                </span>
+                <span
+                  style={{
+                    fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 999,
+                    background: SED_STATUS_COLORS[f.status].bg, color: SED_STATUS_COLORS[f.status].fg,
+                    textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap",
+                  }}
+                >
+                  {f.status}
+                </span>
+              </div>
+              {f.status === "error" && f.error && (
+                <span style={{ fontSize: 11, color: "#b91c1c" }}>{f.error}</span>
+              )}
+              {f.status === "success" && f.resultLabel && (
+                <span style={{ fontSize: 11, color: "var(--muted)" }}>{f.resultLabel}</span>
+              )}
+            </div>
+          ))}
+        </div>
+        {summary && (
+          <p style={{ fontSize: 12, color: "var(--foreground)", margin: "0 0 14px", fontWeight: 600 }}>
+            {summary.succeeded} succeeded, {summary.failed} failed
+          </p>
+        )}
+      </>
+    );
+  }
 
   function CompanyDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
     return (
@@ -436,15 +572,39 @@ export default function UploadPage() {
                     onClick={() => pFileRef.current?.click()}
                     onDragOver={(e) => { e.preventDefault(); setPDragging(true); }}
                     onDragLeave={() => setPDragging(false)}
-                    onDrop={(e) => { e.preventDefault(); setPDragging(false); const f = e.dataTransfer.files[0]; if (f) setPFile(f); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setPDragging(false);
+                      const files = Array.from(e.dataTransfer.files);
+                      if (files.length === 0) return;
+                      setPFiles(isMultiUpload ? files.map(makeFileItem) : [makeFileItem(files[0])]);
+                      setPSummary(null);
+                    }}
                     style={{ ...dropzoneBase, border: `1.5px dashed ${pDragging ? "var(--foreground)" : "var(--card-border)"}`, background: pDragging ? "var(--card-hover-bg)" : "var(--sidebar-bg)" }}
                   >
-                    <input ref={pFileRef} type="file" accept={acceptAttr} style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) setPFile(f); }} />
-                    <span style={{ fontSize: 13, color: pFile ? "var(--foreground)" : "var(--muted-light)" }}>
-                      {pFile ? pFile.name : `Drop a ${acceptLabel} file here, or click to browse`}
+                    <input
+                      ref={pFileRef}
+                      type="file"
+                      accept={acceptAttr}
+                      multiple={isMultiUpload}
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const files = e.target.files ? Array.from(e.target.files) : [];
+                        if (files.length === 0) return;
+                        setPFiles(isMultiUpload ? files.map(makeFileItem) : [makeFileItem(files[0])]);
+                        setPSummary(null);
+                      }}
+                    />
+                    <span style={{ fontSize: 13, color: pFiles.length > 0 ? "var(--foreground)" : "var(--muted-light)" }}>
+                      {pFiles.length > 0
+                        ? pFiles.map((f) => f.file.name).join(", ")
+                        : isMultiUpload
+                          ? `Drop one or more ${acceptLabel} files here, or click to browse`
+                          : `Drop a ${acceptLabel} file here, or click to browse`}
                     </span>
-                    {!pFile && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>{acceptLabel}</div>}
+                    {pFiles.length === 0 && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>{acceptLabel}</div>}
                   </div>
+                  <MultiFileList items={pFiles} summary={pSummary} />
                   <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
                     <input
                       className="search-input"
@@ -476,15 +636,39 @@ export default function UploadPage() {
                     onClick={() => aFileRef.current?.click()}
                     onDragOver={(e) => { e.preventDefault(); setADragging(true); }}
                     onDragLeave={() => setADragging(false)}
-                    onDrop={(e) => { e.preventDefault(); setADragging(false); const f = e.dataTransfer.files[0]; if (f) setAFile(f); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setADragging(false);
+                      const files = Array.from(e.dataTransfer.files);
+                      if (files.length === 0) return;
+                      setAFiles(isMultiUpload ? files.map(makeFileItem) : [makeFileItem(files[0])]);
+                      setASummary(null);
+                    }}
                     style={{ ...dropzoneBase, border: `1.5px dashed ${aDragging ? "var(--foreground)" : "var(--card-border)"}`, background: aDragging ? "var(--card-hover-bg)" : "var(--sidebar-bg)" }}
                   >
-                    <input ref={aFileRef} type="file" accept={acceptAttr} style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) setAFile(f); }} />
-                    <span style={{ fontSize: 13, color: aFile ? "var(--foreground)" : "var(--muted-light)" }}>
-                      {aFile ? aFile.name : `Drop a ${acceptLabel} file here, or click to browse`}
+                    <input
+                      ref={aFileRef}
+                      type="file"
+                      accept={acceptAttr}
+                      multiple={isMultiUpload}
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const files = e.target.files ? Array.from(e.target.files) : [];
+                        if (files.length === 0) return;
+                        setAFiles(isMultiUpload ? files.map(makeFileItem) : [makeFileItem(files[0])]);
+                        setASummary(null);
+                      }}
+                    />
+                    <span style={{ fontSize: 13, color: aFiles.length > 0 ? "var(--foreground)" : "var(--muted-light)" }}>
+                      {aFiles.length > 0
+                        ? aFiles.map((f) => f.file.name).join(", ")
+                        : isMultiUpload
+                          ? `Drop one or more ${acceptLabel} files here, or click to browse`
+                          : `Drop a ${acceptLabel} file here, or click to browse`}
                     </span>
-                    {!aFile && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>{acceptLabel}</div>}
+                    {aFiles.length === 0 && <div style={{ fontSize: 11, color: "var(--muted-light)", marginTop: 4 }}>{acceptLabel}</div>}
                   </div>
+                  <MultiFileList items={aFiles} summary={aSummary} />
                   <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
                     <input
                       className="search-input"
