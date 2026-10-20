@@ -43,13 +43,20 @@ export async function GET(req: NextRequest) {
 
     const bypassFilter = ["admin", "super_admin", "developer"].includes(session.role);
     const companyIds = bypassFilter ? null : await getUserCompanyIds(session.userId);
-    const platformIds = bypassFilter ? null : await getUserPlatformIds(session.userId);
-    const hasPlatforms = !bypassFilter && !!platformIds && platformIds.length > 0;
-    const contentFilter = bypassFilter
-      ? ""
-      : "AND (company_id IS NULL OR is_corporate = true OR company_id = ANY($1::uuid[]))" +
-        (hasPlatforms ? " AND platform_id = ANY($2::uuid[])" : "");
-    const contentParams: unknown[] = bypassFilter ? [] : [companyIds ?? [], platformIds ?? []];
+    const platformIds = await getUserPlatformIds(session.userId);
+    const hasPlatforms = platformIds.length > 0;
+
+    const contentParams: unknown[] = [];
+    let contentFilter = "";
+    if (!bypassFilter) {
+      contentParams.push(companyIds ?? []);
+      contentFilter += ` AND (company_id IS NULL OR is_corporate = true OR company_id = ANY($${contentParams.length}::uuid[]))`;
+    }
+    if (hasPlatforms) {
+      contentParams.push(platformIds);
+      contentFilter += ` AND platform_id = ANY($${contentParams.length}::uuid[])`;
+    }
+
     const wfFilter = bypassFilter
       ? ""
       : "AND (w.company_id IS NULL OR w.is_corporate = true OR w.company_id = ANY($1::uuid[]))";

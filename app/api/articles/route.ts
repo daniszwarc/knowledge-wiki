@@ -14,17 +14,21 @@ export async function GET(req: NextRequest) {
 
     const bypassFilter = ["admin", "super_admin", "developer"].includes(session.role);
     const companyIds = bypassFilter ? null : await getUserCompanyIds(session.userId);
-    const platformIds = bypassFilter ? null : await getUserPlatformIds(session.userId);
+    const platformIds = await getUserPlatformIds(session.userId);
 
     const conditions: string[] = [];
+    const params: unknown[] = [];
     if (unvalidatedOnly) conditions.push("stakeholder_validated = false");
-    if (!bypassFilter) conditions.push("(company_id IS NULL OR is_corporate = true OR company_id = ANY($1::uuid[]))");
-    if (!bypassFilter && platformIds && platformIds.length > 0) {
-      conditions.push("platform_id = ANY($2::uuid[])");
+    if (!bypassFilter) {
+      params.push(companyIds ?? []);
+      conditions.push(`(company_id IS NULL OR is_corporate = true OR company_id = ANY($${params.length}::uuid[]))`);
+    }
+    if (platformIds.length > 0) {
+      params.push(platformIds);
+      conditions.push(`platform_id = ANY($${params.length}::uuid[])`);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    const params: unknown[] = !bypassFilter ? [companyIds ?? [], platformIds ?? []] : [];
 
     const articles = await query<{
       id: string;
