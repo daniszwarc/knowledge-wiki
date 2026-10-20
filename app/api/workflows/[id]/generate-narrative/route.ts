@@ -96,6 +96,7 @@ export async function POST(
     console.log("NARRATIVE_DEBUG about to call LLM");
     if (isAzureGateway(baseUrl)) {
       const apiKey = process.env.LLM_API_KEY ?? "";
+      console.log("NARRATIVE_DEBUG fetching:", `${baseUrl}/v1/responses`);
       const res = await fetch(`${baseUrl}/v1/responses`, {
         method: "POST",
         headers: {
@@ -108,6 +109,7 @@ export async function POST(
           stream: false,
         }),
       });
+      console.log("NARRATIVE_DEBUG res.status:", res.status, "res.ok:", res.ok);
       if (!res.ok) throw new Error(`Narrative generation failed: ${res.status} ${await res.text()}`);
       const data = await res.json();
       console.log("NARRATIVE_LLM_RESPONSE:", JSON.stringify(data, null, 2));
@@ -139,6 +141,7 @@ export async function POST(
 
     return NextResponse.json({ narrative, generated_at: updated[0]?.narrative_generated_at });
   } catch (err) {
+    console.log("NARRATIVE_DEBUG error:", err);
     console.error("[generate-narrative]", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
