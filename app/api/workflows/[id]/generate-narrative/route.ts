@@ -97,6 +97,8 @@ export async function POST(
     if (isAzureGateway(baseUrl)) {
       const apiKey = process.env.LLM_API_KEY ?? "";
       console.log("NARRATIVE_DEBUG fetching:", `${baseUrl}/v1/responses`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30_000);
       const res = await fetch(`${baseUrl}/v1/responses`, {
         method: "POST",
         headers: {
@@ -108,7 +110,10 @@ export async function POST(
           input: [{ role: "user", content: prompt }],
           stream: false,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
+      console.log("NARRATIVE_DEBUG fetch complete, status:", res.status);
       console.log("NARRATIVE_DEBUG res.status:", res.status, "res.ok:", res.ok);
       if (!res.ok) throw new Error(`Narrative generation failed: ${res.status} ${await res.text()}`);
       const data = await res.json();
