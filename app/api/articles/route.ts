@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query, getUserCompanyIds } from "@/lib/db";
+import { query, getUserCompanyIds, getUserPlatformIds } from "@/lib/db";
 import { validateSession } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
@@ -14,13 +14,17 @@ export async function GET(req: NextRequest) {
 
     const bypassFilter = ["admin", "super_admin", "developer"].includes(session.role);
     const companyIds = bypassFilter ? null : await getUserCompanyIds(session.userId);
+    const platformIds = bypassFilter ? null : await getUserPlatformIds(session.userId);
 
     const conditions: string[] = [];
     if (unvalidatedOnly) conditions.push("stakeholder_validated = false");
     if (!bypassFilter) conditions.push("(company_id IS NULL OR is_corporate = true OR company_id = ANY($1::uuid[]))");
+    if (!bypassFilter && platformIds && platformIds.length > 0) {
+      conditions.push("(platform_id IS NULL OR platform_id = ANY($2::uuid[]))");
+    }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    const params: unknown[] = !bypassFilter ? [companyIds ?? []] : [];
+    const params: unknown[] = !bypassFilter ? [companyIds ?? [], platformIds ?? []] : [];
 
     const articles = await query<{
       id: string;

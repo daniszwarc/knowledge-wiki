@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query, getUserCompanyIds } from "@/lib/db";
+import { query, getUserCompanyIds, getUserPlatformIds } from "@/lib/db";
 import { validateSession } from "@/lib/auth";
 
 interface NavWorkflow {
@@ -43,10 +43,13 @@ export async function GET(req: NextRequest) {
 
     const bypassFilter = ["admin", "super_admin", "developer"].includes(session.role);
     const companyIds = bypassFilter ? null : await getUserCompanyIds(session.userId);
+    const platformIds = bypassFilter ? null : await getUserPlatformIds(session.userId);
+    const hasPlatforms = !bypassFilter && !!platformIds && platformIds.length > 0;
     const contentFilter = bypassFilter
       ? ""
-      : "AND (company_id IS NULL OR is_corporate = true OR company_id = ANY($1::uuid[]))";
-    const contentParams: unknown[] = bypassFilter ? [] : [companyIds ?? []];
+      : "AND (company_id IS NULL OR is_corporate = true OR company_id = ANY($1::uuid[]))" +
+        (hasPlatforms ? " AND (platform_id IS NULL OR platform_id = ANY($2::uuid[]))" : "");
+    const contentParams: unknown[] = bypassFilter ? [] : [companyIds ?? [], platformIds ?? []];
     const wfFilter = bypassFilter
       ? ""
       : "AND (w.company_id IS NULL OR w.is_corporate = true OR w.company_id = ANY($1::uuid[]))";
