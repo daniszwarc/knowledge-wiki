@@ -44,18 +44,6 @@ export async function GET(req: NextRequest) {
     const bypassFilter = ["admin", "super_admin", "developer"].includes(session.role);
     const companyIds = bypassFilter ? null : await getUserCompanyIds(session.userId);
     const platformIds = await getUserPlatformIds(session.userId);
-    const hasPlatforms = platformIds.length > 0;
-
-    const contentParams: unknown[] = [];
-    let contentFilter = "";
-    if (!bypassFilter) {
-      contentParams.push(companyIds ?? []);
-      contentFilter += ` AND (company_id IS NULL OR is_corporate = true OR company_id = ANY($${contentParams.length}::uuid[]))`;
-    }
-    if (hasPlatforms) {
-      contentParams.push(platformIds);
-      contentFilter += ` AND platform_id = ANY($${contentParams.length}::uuid[])`;
-    }
 
     const wfParams: unknown[] = [];
     let wfFilter = "";
@@ -64,7 +52,7 @@ export async function GET(req: NextRequest) {
       wfFilter = `AND (w.company_id IS NULL OR w.is_corporate = true OR w.company_id = ANY($${wfParams.length}::uuid[]))`;
     }
 
-    const [workflows, howToGuides, trainingMaterial] = await Promise.all([
+    const [workflows, articlesByPlatformEntries] = await Promise.all([
       query<NavWorkflow>(
         `SELECT w.id, w.name, w.department, w.completeness_score,
                 COUNT(r.id) as rule_count
@@ -75,26 +63,53 @@ export async function GET(req: NextRequest) {
          ORDER BY w.department, w.name`,
         wfParams
       ),
-      query<NavArticle>(
-        `SELECT id, title, department, stakeholder_validated
-         FROM articles
-         WHERE 'how_to_guide' = ANY(COALESCE(appears_as, ARRAY['how_to_guide'])) ${contentFilter}
-         ORDER BY department, title`,
-        contentParams
-      ),
-      query<NavArticle>(
-        `SELECT id, title, department, stakeholder_validated
-         FROM articles
-         WHERE 'training_material' = ANY(COALESCE(appears_as, ARRAY['how_to_guide']::text[])) ${contentFilter}
-         ORDER BY department, title`,
-        contentParams
+      Promise.all(
+        platformIds.map(async (platformId) => {
+          const params: unknown[] = [];
+          let companyClause = "";
+          if (!bypassFilter) {
+            params.push(companyIds ?? []);
+            companyClause = ` AND (company_id IS NULL OR is_corporate = true OR company_id = ANY($${params.length}::uuid[]))`;
+          }
+          params.push(platformId);
+          const platformClause = ` AND platform_id = $${params.length}`;
+
+          const [howToGuides, trainingMaterial] = await Promise.all([
+            query<NavArticle>(
+              `SELECT id, title, department, stakeholder_validated
+               FROM articles
+               WHERE 'how_to_guide' = ANY(COALESCE(appears_as, ARRAY['how_to_guide']))${companyClause}${platformClause}
+               ORDER BY department, title`,
+              params
+            ),
+            query<NavArticle>(
+              `SELECT id, title, department, stakeholder_validated
+               FROM articles
+               WHERE 'training_material' = ANY(COALESCE(appears_as, ARRAY['how_to_guide']::text[]))${companyClause}${platformClause}
+               ORDER BY department, title`,
+              params
+            ),
+          ]);
+
+          return [
+            platformId,
+            {
+              howToGuides: groupByDepartment(howToGuides, "articles"),
+              trainingMaterial: groupByDepartment(trainingMaterial, "articles"),
+            },
+          ] as const;
+        })
       ),
     ]);
 
+    const articlesByPlatform: Record<string, { howToGuides: unknown; trainingMaterial: unknown }> = {};
+    for (const [platformId, data] of articlesByPlatformEntries) {
+      articlesByPlatform[platformId] = data;
+    }
+
     return NextResponse.json({
       businessRules: groupByDepartment(workflows, "workflows"),
-      howToGuides: groupByDepartment(howToGuides, "articles"),
-      trainingMaterial: groupByDepartment(trainingMaterial, "articles"),
+      articlesByPlatform,
     });
   } catch (err) {
     console.error(err);

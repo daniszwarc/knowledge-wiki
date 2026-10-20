@@ -41,8 +41,7 @@ interface NavVideo {
 
 interface SidebarNavData {
   businessRules: NavDeptWorkflows[];
-  howToGuides: NavDeptArticles[];
-  trainingMaterial: NavDeptArticles[];
+  articlesByPlatform: Record<string, { howToGuides: NavDeptArticles[]; trainingMaterial: NavDeptArticles[] }>;
 }
 
 interface Me {
@@ -268,11 +267,12 @@ export function Sidebar({
       if (cat && dept) setOpenDepts((prev) => ({ ...prev, [`${cat.id}:${dept.department}`]: true }));
     }
     if (activeArticleId) {
-      let dept = nav.howToGuides.find((d) => d.articles.some((a) => a.id === activeArticleId));
-      const sub = dept ? "howToGuides" : "trainingMaterial";
-      if (!dept) dept = nav.trainingMaterial.find((d) => d.articles.some((a) => a.id === activeArticleId));
       const cat = openFor("article");
       if (cat) {
+        const platformData = nav.articlesByPlatform[cat.platformId];
+        let dept = platformData?.howToGuides.find((d) => d.articles.some((a) => a.id === activeArticleId));
+        const sub = dept ? "howToGuides" : "trainingMaterial";
+        if (!dept) dept = platformData?.trainingMaterial.find((d) => d.articles.some((a) => a.id === activeArticleId));
         setOpenSubSections((prev) => ({ ...prev, [`${cat.id}:${sub}`]: true }));
         if (dept) setOpenDepts((prev) => ({ ...prev, [`${cat.id}:${sub}:${dept!.department}`]: true }));
       }
@@ -353,9 +353,11 @@ export function Sidebar({
 
   function renderArticleCategory(cat: Category) {
     if (!nav) return null;
+    const platformData = nav.articlesByPlatform[cat.platform_id];
+    if (!platformData) return null;
     const groups: { key: "howToGuides" | "trainingMaterial"; label: string; data: NavDeptArticles[] }[] = [
-      { key: "howToGuides", label: "How-to guides", data: nav.howToGuides },
-      { key: "trainingMaterial", label: "Training material", data: nav.trainingMaterial },
+      { key: "howToGuides", label: "How-to guides", data: platformData.howToGuides },
+      { key: "trainingMaterial", label: "Training material", data: platformData.trainingMaterial },
     ];
     return (
       <div key={cat.id}>
