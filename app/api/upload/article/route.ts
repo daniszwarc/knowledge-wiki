@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
   const appearsAsRaw = (formData.get("appears_as") as string | null) ?? "how_to_guide";
   const isCorporate = formData.get("is_corporate") === "true";
   const companyId = (formData.get("company_id") as string | null) || null;
+  const platformId = (formData.get("platform_id") as string | null) || null;
 
   if (!file || !title || !department) {
     return NextResponse.json({ error: "file, title, and department are required" }, { status: 400 });
@@ -54,8 +55,8 @@ export async function POST(req: NextRequest) {
 
   if (articleId) {
     await query(
-      `UPDATE articles SET appears_as = $1, company_id = $2, is_corporate = $3 WHERE id = $4`,
-      [appearsAsArray, companyId, isCorporate, articleId]
+      `UPDATE articles SET appears_as = $1, company_id = $2, is_corporate = $3, platform_id = $4 WHERE id = $5`,
+      [appearsAsArray, companyId, isCorporate, platformId, articleId]
     );
   }
 
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest) {
       articleId,
       "INSERT",
       session.email,
-      JSON.stringify({ title, department, appears_as: appearsAsArray, company_id: companyId, is_corporate: isCorporate }),
+      JSON.stringify({ title, department, appears_as: appearsAsArray, company_id: companyId, is_corporate: isCorporate, platform_id: platformId }),
     ]
   );
 

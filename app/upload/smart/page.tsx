@@ -16,6 +16,12 @@ interface Company {
   name: string;
 }
 
+interface Platform {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 type DocType = "rules" | "article" | "sed" | "video";
 
 const DOC_TYPE_META: Record<DocType, { icon: string; label: string }> = {
@@ -85,11 +91,6 @@ function needsOverrideUI(item: SmartFileItem): boolean {
   return !isLocked(item);
 }
 
-function deriveTitleFromFilename(filename: string): string {
-  const withoutExt = filename.replace(/\.[^/.]+$/, "");
-  return withoutExt.replace(/[_-]+/g, " ").trim() || filename;
-}
-
 const UPLOAD_ENDPOINT: Record<DocType, string> = {
   rules: "/api/upload/process",
   article: "/api/upload/article",
@@ -110,11 +111,12 @@ export default function SmartUploadPage() {
   const [authLoading, setAuthLoading] = useState(true);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
+  const [platforms, setPlatforms] = useState<Platform[]>([]);
+  const [platformId, setPlatformId] = useState("");
 
   const [files, setFiles] = useState<SmartFileItem[]>([]);
   const [department, setDepartment] = useState("");
   const [company, setCompany] = useState("all");
-  const [title, setTitle] = useState("");
   const [appearsAs, setAppearsAs] = useState<Set<string>>(new Set(["how_to_guide"]));
 
   const fileRef = useRef<HTMLInputElement>(null);
@@ -143,6 +145,13 @@ export default function SmartUploadPage() {
     fetch("/api/companies/user")
       .then((r) => (r.ok ? r.json() : []))
       .then((data: Company[]) => setCompanies(data));
+
+    fetch("/api/platforms/user")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: Platform[]) => {
+        setPlatforms(data);
+        if (data.length === 1) setPlatformId(data[0].id);
+      });
   }, []);
 
   if (authLoading) return null;
@@ -213,25 +222,21 @@ export default function SmartUploadPage() {
     }
   }
 
-  const isSingleFile = files.length === 1;
-  const singleEffectiveType = isSingleFile ? effectiveDocType(files[0]) : null;
-  const showTitleField = isSingleFile && (singleEffectiveType === "rules" || singleEffectiveType === "article");
   const showAppearsAs = files.some((f) => effectiveDocType(f) === "article");
   const showVideoEmbedInputs = files.some((f) => effectiveDocType(f) === "video");
 
   function titleForItem(item: SmartFileItem): string {
-    if (isSingleFile && title.trim()) return title.trim();
-    return deriveTitleFromFilename(item.file.name);
+    return item.file.name.replace(/\.[^.]+$/, "");
   }
 
   function isDisabled(): boolean {
     if (loading) return true;
     if (files.length === 0) return true;
     if (!department.trim()) return true;
+    if (!platformId) return true;
     if (files.some((f) => f.classifyStatus === "classifying")) return true;
     if (files.some((f) => effectiveDocType(f) === null)) return true;
     if (showVideoEmbedInputs && files.some((f) => effectiveDocType(f) === "video" && !f.embedUrl.trim())) return true;
-    if (showTitleField && !title.trim()) return true;
     return false;
   }
 
@@ -261,21 +266,25 @@ export default function SmartUploadPage() {
             fd.append("workflow_name", itemTitle);
             fd.append("department", department.trim());
             appendCompanyFields(fd);
+            fd.append("platform_id", platformId);
           } else if (docType === "article") {
             fd.append("file", item.file);
             fd.append("title", itemTitle);
             fd.append("department", department.trim());
             fd.append("appears_as", Array.from(appearsAs).join(","));
             appendCompanyFields(fd);
+            fd.append("platform_id", platformId);
           } else if (docType === "sed") {
             fd.append("file", item.file);
             appendCompanyFields(fd);
+            fd.append("platform_id", platformId);
           } else {
             fd.append("srt_file", item.file);
             fd.append("title", itemTitle);
             fd.append("department", department.trim());
             fd.append("embed_url", item.embedUrl.trim());
             appendCompanyFields(fd);
+            fd.append("platform_id", platformId);
           }
 
           const res = await fetch(UPLOAD_ENDPOINT[docType], { method: "POST", body: fd });
@@ -484,17 +493,22 @@ export default function SmartUploadPage() {
                 </p>
               )}
 
-              {/* Title (single-file, non-SED only) */}
-              {showTitleField && (
-                <input
+              {/* Platform */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: "var(--muted)", marginBottom: 6 }}>Platform</div>
+                <select
                   className="search-input"
                   required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Title"
-                  style={{ width: "100%", padding: "9px 14px", fontSize: 13, borderRadius: 8, marginBottom: 14, boxSizing: "border-box" }}
-                />
-              )}
+                  value={platformId}
+                  onChange={(e) => setPlatformId(e.target.value)}
+                  style={companySelectStyle}
+                >
+                  <option value="">Select platform…</option>
+                  {platforms.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
 
               {/* Department (always required) */}
               <input
