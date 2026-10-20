@@ -57,9 +57,12 @@ export async function GET(req: NextRequest) {
       contentFilter += ` AND platform_id = ANY($${contentParams.length}::uuid[])`;
     }
 
-    const wfFilter = bypassFilter
-      ? ""
-      : "AND (w.company_id IS NULL OR w.is_corporate = true OR w.company_id = ANY($1::uuid[]))";
+    const wfParams: unknown[] = [];
+    let wfFilter = "";
+    if (!bypassFilter) {
+      wfParams.push(companyIds ?? []);
+      wfFilter = `AND (w.company_id IS NULL OR w.is_corporate = true OR w.company_id = ANY($${wfParams.length}::uuid[]))`;
+    }
 
     const [workflows, howToGuides, trainingMaterial] = await Promise.all([
       query<NavWorkflow>(
@@ -70,7 +73,7 @@ export async function GET(req: NextRequest) {
          WHERE 1=1 ${wfFilter}
          GROUP BY w.id
          ORDER BY w.department, w.name`,
-        contentParams
+        wfParams
       ),
       query<NavArticle>(
         `SELECT id, title, department, stakeholder_validated
