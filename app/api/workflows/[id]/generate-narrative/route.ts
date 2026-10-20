@@ -108,6 +108,7 @@ export async function POST(
       });
       if (!res.ok) throw new Error(`Narrative generation failed: ${res.status} ${await res.text()}`);
       const data = await res.json();
+      console.log("NARRATIVE_LLM_RESPONSE:", JSON.stringify(data, null, 2));
       narrative = data.output_text ?? "";
     } else {
       const client = new OpenAI({
