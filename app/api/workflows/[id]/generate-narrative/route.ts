@@ -40,6 +40,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const baseUrl = getBaseUrl();
+    console.log("NARRATIVE_DEBUG baseUrl:", process.env.OLLAMA_BASE_URL, "isAzure:", isAzureGateway(baseUrl));
     const { id: workflowId } = await params;
 
     const workflows = await query<{ id: string; name: string; department: string }>(
@@ -89,9 +91,9 @@ export async function POST(
       .replace("{department}", workflow.department)
       .replace("{rules_formatted}", rulesFormatted);
 
-    const baseUrl = getBaseUrl();
     let narrative: string;
 
+    console.log("NARRATIVE_DEBUG about to call LLM");
     if (isAzureGateway(baseUrl)) {
       const apiKey = process.env.LLM_API_KEY ?? "";
       const res = await fetch(`${baseUrl}/v1/responses`, {
