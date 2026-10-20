@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
     const contentFilter = bypassFilter
       ? ""
       : "AND (company_id IS NULL OR is_corporate = true OR company_id = ANY($1::uuid[]))" +
-        (hasPlatforms ? " AND (platform_id IS NULL OR platform_id = ANY($2::uuid[]))" : "");
+        (hasPlatforms ? " AND platform_id = ANY($2::uuid[])" : "");
     const contentParams: unknown[] = bypassFilter ? [] : [companyIds ?? [], platformIds ?? []];
     const wfFilter = bypassFilter
       ? ""

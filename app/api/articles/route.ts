@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     if (unvalidatedOnly) conditions.push("stakeholder_validated = false");
     if (!bypassFilter) conditions.push("(company_id IS NULL OR is_corporate = true OR company_id = ANY($1::uuid[]))");
     if (!bypassFilter && platformIds && platformIds.length > 0) {
-      conditions.push("(platform_id IS NULL OR platform_id = ANY($2::uuid[]))");
+      conditions.push("platform_id = ANY($2::uuid[])");
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
